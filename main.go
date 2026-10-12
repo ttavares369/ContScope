@@ -100,7 +100,7 @@ func main(){
  http.HandleFunc("/api/logs",auth(logMonitor.serveLogs))
  storePath=os.Getenv("CONTSCOPE_DATA");if storePath==""{storePath="./servers.json"}
  if os.Getenv("CONTSCOPE_USER")==""||len(os.Getenv("CONTSCOPE_PASSWORD"))<16{log.Fatal("Set CONTSCOPE_USER and CONTSCOPE_PASSWORD (at least 16 characters)")}
- if _,err:=masterKey();err!=nil{log.Fatal("Set a valid CONTSCOPE_MASTER_KEY (32 random bytes as 64 hex characters)")}
+ if _,err:=masterKey();err!=nil{log.Fatal("Cannot initialize secure local credential storage: ",err)}
  go logMonitor.scanLoop()
  addr:=os.Getenv("CONTSCOPE_ADDR");if addr==""{addr="127.0.0.1:8080"}
  http.HandleFunc("/",auth(func(w http.ResponseWriter,r *http.Request){if r.URL.Path!="/"||r.Method!="GET"{http.NotFound(w,r);return};w.Header().Set("Content-Type","text/html; charset=utf-8");_ = page.Execute(w,nil)}))
