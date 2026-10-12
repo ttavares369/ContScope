@@ -33,20 +33,19 @@ func save(s []Server) error { b,e:=json.MarshalIndent(s,"","  ");if e!=nil{retur
 func valid(s Server) bool { return nameSafe.MatchString(s.Name)&&safe.MatchString(s.Host)&&safe.MatchString(s.User)&&safe.MatchString(s.Key)&&s.Port>=1&&s.Port<=65535 }
 func auth(next http.HandlerFunc) http.HandlerFunc { return func(w http.ResponseWriter,r *http.Request) { u,p,ok:=r.BasicAuth();wantU:=os.Getenv("CONTSCOPE_USER");wantP:=os.Getenv("CONTSCOPE_PASSWORD");if !ok||subtle.ConstantTimeCompare([]byte(u),[]byte(wantU))!=1||subtle.ConstantTimeCompare([]byte(p),[]byte(wantP))!=1 {w.Header().Set("WWW-Authenticate",`Basic realm="ContScope"`);http.Error(w,"Authentication required",401);return};if r.Method!="GET" { origin:=r.Header.Get("Origin");if origin!=""&&origin!="http://"+r.Host&&origin!="https://"+r.Host {http.Error(w,"Invalid origin",403);return} };next(w,r) } }
 const remote = `set -u
-sample_cpu() { awk '$1=="cpu" {idle=$5+$6; total=0; for(i=2;i<=NF;i++)total+=$i; printf "%.0f %.0f\\n",idle,total;exit}' /proc/stat; }
-sample_net() { awk 'NR>2 && $1 !~ /lo:/ {rx+=$2;tx+=$10} END{printf "%.0f %.0f\\n",rx,tx}' /proc/net/dev; }
+sample_cpu() { awk '$1=="cpu" {idle=$5+$6; total=0; for(i=2;i<=NF;i++)total+=$i; printf "%.0f %.0f\n",idle,total;exit}' /proc/stat; }
+sample_net() { awk 'NR>2 && $1 !~ /lo:/ {rx+=$2;tx+=$10} END{printf "%.0f %.0f\n",rx,tx}' /proc/net/dev; }
 set -- $(sample_cpu); idle1=$1; total1=$2
 set -- $(sample_net); rx1=$1; tx1=$2
 sleep 1
 set -- $(sample_cpu)
-awk -v i1="$idle1" -v t1="$total1" -v i2="$1" -v t2="$2" 'BEGIN{d=t2-t1;if(d>0) printf "CPU|%.1f\\n",100*(1-(i2-i1)/d)}'
+awk -v i1="$idle1" -v t1="$total1" -v i2="$1" -v t2="$2" 'BEGIN{d=t2-t1;if(d>0) printf "CPU|%.1f\n",100*(1-(i2-i1)/d)}'
 set -- $(sample_net)
-awk -v rx="$1" -v tx="$2" -v rx1="$rx1" -v tx1="$tx1" 'BEGIN{printf "NET|%.0f B/s RX, %.0f B/s TX\\n",rx-rx1,tx-tx1}'
+awk -v rx="$1" -v tx="$2" -v rx1="$rx1" -v tx1="$tx1" 'BEGIN{printf "NET|%.0f B/s RX, %.0f B/s TX\n",rx-rx1,tx-tx1}'
 printf 'UPTIME|'; uptime -p 2>/dev/null || true
 printf 'LOAD|'; cat /proc/loadavg | cut -d' ' -f1-3
 awk '/MemTotal:/ {total=$2*1024} /MemAvailable:/ {avail=$2*1024} END {printf "MEM|%.0f|%.0f\n", total-avail,total}' /proc/meminfo
 df -B1 -P / | awk 'NR==2{printf "DISK|%s|%s\n",$3,$2}'
-awk 'NR>2 && $1 !~ /lo:/ {rx+=$2;tx+=$10} END{printf "NET|%.0f RX / %.0f TX bytes\n",rx,tx}' /proc/net/dev
 if command -v docker >/dev/null 2>&1; then
 docker ps -a --no-trunc --format '{{json .}}' 2>/dev/null | while IFS= read -r line; do printf 'CONTAINER|%s\n' "$line"; done
 docker stats --no-stream --format '{{json .}}' 2>/dev/null | while IFS= read -r line; do printf 'STATS|%s\n' "$line"; done
@@ -111,7 +110,7 @@ async function load(){servers=await api('/api/servers');if(selected!=='all'&&!se
 function renderHost(s){if(!s.online)return '<section class="card"><h3 class="bad">'+esc(s.server.name)+' · Unreachable</h3><p>'+esc(s.error||'Connection failed')+'</p></section>';
 let mp=s.memoryTotal?100*s.memoryUsed/s.memoryTotal:null,dp=s.diskTotal?100*s.diskUsed/s.diskTotal:null;
 let containers=s.containers||[], bad=containers.filter(c=>/unhealthy|restarting|exited|dead/i.test(c.status)).length;
-let html='<section><h2>'+esc(s.server.name)+' <small class="good">● Connected</small></h2><p class="sub">'+esc(s.server.host)+' · '+esc(s.uptime)+' · load '+esc(s.load)+'</p><div class="grid">'+metric('Memory',human(s.memoryUsed)+' / '+human(s.memoryTotal),mp)+metric('Root disk',human(s.diskUsed)+' / '+human(s.diskTotal),dp)+metric('Docker containers',containers.length+' total · '+bad+' attention',null)+metric('Network counters',s.network||'—',null)+'</div></section>';
+let html='<section><h2>'+esc(s.server.name)+' <small class="good">● Connected</small></h2><p class="sub">'+esc(s.server.host)+' · '+esc(s.uptime)+' · load '+esc(s.load)+'</p><div class="grid">'+metric('CPU',s.cpuPercent===undefined?'—':s.cpuPercent.toFixed(1)+'%',s.cpuPercent??null)+metric('Memory',human(s.memoryUsed)+' / '+human(s.memoryTotal),mp)+metric('Root disk',human(s.diskUsed)+' / '+human(s.diskTotal),dp)+metric('Docker containers',containers.length+' total · '+bad+' attention',null)+metric('Network throughput',s.network||'—',null)+'</div></section>';
 html+='<section class="card"><h3>Containers</h3><div class="scroll"><table><thead><tr><th>Name</th><th>Status / health</th><th>CPU</th><th>Memory</th><th>Network I/O</th></tr></thead><tbody>';
 for(let c of containers)html+='<tr><td>'+esc(c.name)+'</td><td class="'+(/unhealthy|exited|restarting|dead/i.test(c.status)?'bad':'')+'">'+esc(c.status)+'</td><td>'+esc(c.cpu||'—')+'</td><td>'+esc(c.memory||'—')+'</td><td>'+esc(c.netIO||'—')+'</td></tr>';
 html+='</tbody></table></div></section><button class="remove" data-id="'+esc(s.server.id)+'">Remove server</button>';return html}
