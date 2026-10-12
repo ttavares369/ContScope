@@ -10,7 +10,6 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - contscope_data:/data
-      - ./ssh:/home/contscope/.ssh:ro
     security_opt:
       - no-new-privileges:true
     read_only: true
