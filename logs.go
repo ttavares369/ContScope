@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+ "errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -68,6 +69,7 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 
 // runSSHScript passes the script only via stdin and never interpolates user fields into a remote shell.
 func runSSHScript(s Server, script string, timeout time.Duration, maxOutput int) (string, bool, error) {
+ if s.AuthMethod!="" {secret,err:=managedSecret(s.ID);if err!=nil{return "",false,errors.New("SSH credential unavailable")};output,err:=runSSHAuthenticated(s,secret,script,timeout,maxOutput);return output,false,err}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	args := []string{"-F", "/dev/null", "-o", "BatchMode=yes",
