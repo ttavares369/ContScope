@@ -26,6 +26,7 @@ type LogAlert struct {
 	ContainerID   string    `json:"containerId"`
 	ContainerName string    `json:"containerName"`
 	Message       string    `json:"message"`
+ Guidance      LogGuidance `json:"guidance"`
 	At            time.Time `json:"at"`
 }
 
@@ -260,7 +261,7 @@ func parseLogScan(s Server, data string) scanResult {
 		result.alerts = append(result.alerts, LogAlert{
 			ID: hex.EncodeToString(hash[:12]), ServerID: s.ID,
 			ServerName: s.Name, ContainerID: parts[1],
-			ContainerName: parts[1][:12], Message: msg, At: time.Now().UTC(),
+			ContainerName: parts[1][:12], Message: msg, Guidance: GuideLog(msg), At: time.Now().UTC(),
 		})
 	}
 	return result
