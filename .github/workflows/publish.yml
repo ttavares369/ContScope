@@ -47,6 +47,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Record build time
+        id: buildtime
+        run: echo "stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - name: Build and publish image
         uses: docker/build-push-action@v7
         with:
@@ -57,7 +60,7 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             VCS_REF=${{ github.sha }}
-            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            BUILD_DATE=${{ steps.buildtime.outputs.stamp }}
           labels: |
             org.opencontainers.image.source=https://github.com/ttavares369/ContScope
             org.opencontainers.image.licenses=Apache-2.0
