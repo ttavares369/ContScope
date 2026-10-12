@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 740 615" role="img" aria-labelledby="title"><title id="title">ContScope</title><g transform="translate(112 34)"><defs>
+<linearGradient id="side" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#09A9F4"/><stop offset=".55" stop-color="#1279D8"/><stop offset="1" stop-color="#0563BF"/></linearGradient>
+<linearGradient id="face" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0854A8"/><stop offset="1" stop-color="#041D4B"/></linearGradient>
+<linearGradient id="roof" x1="0" x2="1"><stop stop-color="#0F7ED7"/><stop offset="1" stop-color="#003E8B"/></linearGradient>
+</defs>
+<path d="M55 126 201 61 439 121 439 298 201 354 55 289Z" fill="url(#side)" stroke="#0C5498" stroke-width="4" stroke-linejoin="round"/>
+<path d="M55 126 201 61 439 121 294 166Z" fill="url(#roof)"/>
+<path d="M55 126 201 166 201 354 55 289Z" fill="url(#face)"/>
+<path d="M73 145 182 181 182 325 73 279Z" fill="none" stroke="#239EF2" stroke-width="7"/>
+<path d="M102 165 102 296M139 177 139 311" stroke="#9EDDFE" stroke-width="7" stroke-linecap="round"/>
+<path d="M91 217H113M128 230H151" stroke="#D8F4FF" stroke-width="9" stroke-linecap="round"/>
+<path d="M235 176V321M265 169V312M295 158V305M325 155V300M355 143V295M386 139V285" stroke="#0560B0" stroke-width="11" opacity=".52"/>
+<circle cx="342" cy="220" r="105" fill="#10274C" opacity=".12"/>
+<circle cx="342" cy="220" r="94" fill="#F9FDFF"/>
+<circle cx="342" cy="220" r="82" fill="none" stroke="#062D68" stroke-width="15" stroke-dasharray="103 24" transform="rotate(14 342 220)"/>
+<path d="M342 108V149M342 291V332M230 220H270M413 220H453" stroke="#0774CA" stroke-width="14" stroke-linecap="round"/>
+<circle cx="342" cy="220" r="21" fill="#11B0F6"/></g><text x="370" y="521" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="98" font-weight="750" letter-spacing="-5"><tspan fill="#072B63">Cont</tspan><tspan fill="#078DD9">Scope</tspan></text></svg>

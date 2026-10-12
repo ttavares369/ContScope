@@ -1,0 +1,45 @@
+name: CI
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Go format
+        run: gofmt -l .
+      - name: Browser JavaScript syntax
+        run: |
+          python3 -c "from pathlib import Path; s=Path('main.go').read_text(); Path('/tmp/contscope-ui.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0])"
+          node --check /tmp/contscope-ui.js
+      - name: Go vet
+        run: go vet ./...
+      - name: Unit tests
+        run: go test -race ./...
+      - name: Compile
+        run: go build ./...
+      - name: Local dashboard HTTP smoke test
+        run: |
+          CONTSCOPE_USER=smoke CONTSCOPE_PASSWORD=very-long-smoke-test-password CONTSCOPE_DATA="$RUNNER_TEMP/contscope/servers.json" CONTSCOPE_ADDR=127.0.0.1:18765 go run . > "$RUNNER_TEMP/contscope-app.log" 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          for i in $(seq 1 40); do
+            if curl --silent --fail --user smoke:very-long-smoke-test-password http://127.0.0.1:18765/api/about > "$RUNNER_TEMP/about.json"; then break; fi
+            sleep 1
+          done
+          python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); assert v["license"]=="Apache-2.0"' "$RUNNER_TEMP/about.json"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18765/api/servers)" = 401
+          curl --fail --silent --user smoke:very-long-smoke-test-password http://127.0.0.1:18765/ | grep -q 'Organize servers with colors'
+          curl --fail --silent http://127.0.0.1:18765/assets/contscope-mark.svg | grep -q '<svg'
+          curl --fail --silent --user smoke:very-long-smoke-test-password http://127.0.0.1:18765/api/tags | grep -q '\[\]'
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t contscope:test .
