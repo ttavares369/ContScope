@@ -1,6 +1,7 @@
 package main
 
 import (
+ "context"
  "crypto/subtle"
  "encoding/json"
  "errors"
@@ -20,7 +21,7 @@ import (
 
 type Server struct { ID string `json:"id"`; Name string `json:"name"`; Host string `json:"host"`; Port int `json:"port"`; User string `json:"user"`; Key string `json:"key"` }
 type Container struct { ID string `json:"id"`; Names string `json:"name"`; Status string `json:"status"`; State string `json:"state"`; RestartCount int `json:"restarts"`; CPU string `json:"cpu"`; Memory string `json:"memory"`; NetIO string `json:"netIO"` }
-type Snapshot struct { Server Server `json:"server"`; Online bool `json:"online"`; Error string `json:"error,omitempty"`; Uptime string `json:"uptime"`; Load string `json:"load"`; MemoryUsed uint64 `json:"memoryUsed"`; MemoryTotal uint64 `json:"memoryTotal"`; DiskUsed uint64 `json:"diskUsed"`; DiskTotal uint64 `json:"diskTotal"`; Network string `json:"network"`; Containers []Container `json:"containers"`; At time.Time `json:"at"` }
+type Snapshot struct { Server Server `json:"server"`; Online bool `json:"online"`; Error string `json:"error,omitempty"`; Uptime string `json:"uptime"`; Load string `json:"load"`; MemoryUsed uint64 `json:"memoryUsed"`; MemoryTotal uint64 `json:"memoryTotal"`; DiskUsed uint64 `json:"diskUsed"`; DiskTotal uint64 `json:"diskTotal"`; Network string `json:"network"`; CPUPercent *float64 `json:"cpuPercent,omitempty"`; Containers []Container `json:"containers"`; At time.Time `json:"at"` }
 var safe = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 var nameSafe = regexp.MustCompile(`^[a-zA-Z0-9 _.-]{1,64}$`)
 var mu sync.Mutex
@@ -32,6 +33,15 @@ func save(s []Server) error { b,e:=json.MarshalIndent(s,"","  ");if e!=nil{retur
 func valid(s Server) bool { return nameSafe.MatchString(s.Name)&&safe.MatchString(s.Host)&&safe.MatchString(s.User)&&safe.MatchString(s.Key)&&s.Port>=1&&s.Port<=65535 }
 func auth(next http.HandlerFunc) http.HandlerFunc { return func(w http.ResponseWriter,r *http.Request) { u,p,ok:=r.BasicAuth();wantU:=os.Getenv("CONTSCOPE_USER");wantP:=os.Getenv("CONTSCOPE_PASSWORD");if !ok||subtle.ConstantTimeCompare([]byte(u),[]byte(wantU))!=1||subtle.ConstantTimeCompare([]byte(p),[]byte(wantP))!=1 {w.Header().Set("WWW-Authenticate",`Basic realm="ContScope"`);http.Error(w,"Authentication required",401);return};if r.Method!="GET" { origin:=r.Header.Get("Origin");if origin!=""&&origin!="http://"+r.Host&&origin!="https://"+r.Host {http.Error(w,"Invalid origin",403);return} };next(w,r) } }
 const remote = `set -u
+sample_cpu() { awk '$1=="cpu" {idle=$5+$6; total=0; for(i=2;i<=NF;i++)total+=$i; printf "%.0f %.0f\\n",idle,total;exit}' /proc/stat; }
+sample_net() { awk 'NR>2 && $1 !~ /lo:/ {rx+=$2;tx+=$10} END{printf "%.0f %.0f\\n",rx,tx}' /proc/net/dev; }
+set -- $(sample_cpu); idle1=$1; total1=$2
+set -- $(sample_net); rx1=$1; tx1=$2
+sleep 1
+set -- $(sample_cpu)
+awk -v i1="$idle1" -v t1="$total1" -v i2="$1" -v t2="$2" 'BEGIN{d=t2-t1;if(d>0) printf "CPU|%.1f\\n",100*(1-(i2-i1)/d)}'
+set -- $(sample_net)
+awk -v rx="$1" -v tx="$2" -v rx1="$rx1" -v tx1="$tx1" 'BEGIN{printf "NET|%.0f B/s RX, %.0f B/s TX\\n",rx-rx1,tx-tx1}'
 printf 'UPTIME|'; uptime -p 2>/dev/null || true
 printf 'LOAD|'; cat /proc/loadavg | cut -d' ' -f1-3
 awk '/MemTotal:/ {total=$2*1024} /MemAvailable:/ {avail=$2*1024} END {printf "MEM|%.0f|%.0f\n", total-avail,total}' /proc/meminfo
@@ -44,10 +54,11 @@ fi`
 func collect(s Server) Snapshot {
  x:=Snapshot{Server:s,At:time.Now(),Containers:[]Container{}}
  target:=s.User+"@"+s.Host
- args:=[]string{"-o","BatchMode=yes","-o","ConnectTimeout=5","-o","StrictHostKeyChecking=yes","-o","UserKnownHostsFile=/home/contscope/.ssh/known_hosts","-o","IdentitiesOnly=yes","-p",strconv.Itoa(s.Port),"-i","/home/contscope/.ssh/"+s.Key,"--",target,"sh","-c",remote}
- cmd:=exec.Command("ssh",args...);var b strings.Builder;cmd.Stdout=&b;var errBuf strings.Builder;cmd.Stderr=&errBuf
- done:=make(chan error,1);go func(){done<-cmd.Run()}()
- select {case e:=<-done:if e!=nil{x.Error="SSH collection failed: "+strings.TrimSpace(errBuf.String());return x};case <-time.After(15*time.Second):_ = cmd.Process.Kill();<-done;x.Error="SSH timeout";return x}
+ args:=[]string{"-F","/dev/null","-o","BatchMode=yes","-o","ConnectTimeout=5","-o","StrictHostKeyChecking=yes","-o","UserKnownHostsFile=/home/contscope/.ssh/known_hosts","-o","IdentitiesOnly=yes","-o","ClearAllForwardings=yes","-o","PermitLocalCommand=no","-o","ControlMaster=no","-o","RequestTTY=no","-p",strconv.Itoa(s.Port),"-i","/home/contscope/.ssh/"+s.Key,target,"sh -s"}
+ ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second);defer cancel()
+ cmd:=exec.CommandContext(ctx,"ssh",args...);cmd.Stdin=strings.NewReader(remote)
+ var b strings.Builder;cmd.Stdout=&b;var errBuf strings.Builder;cmd.Stderr=&errBuf
+ if e:=cmd.Run();e!=nil {if ctx.Err()!=nil{x.Error="SSH collection timed out"}else{x.Error="SSH collection failed: "+strings.TrimSpace(errBuf.String())};return x}
  x.Online=true
  byID:=map[string]int{}
  for _,line:=range strings.Split(b.String(),"\n"){t:=strings.SplitN(line,"|",3);if len(t)<2{continue};switch t[0]{
@@ -56,6 +67,7 @@ func collect(s Server) Snapshot {
  case "MEM":if len(t)>2{x.MemoryUsed,_=strconv.ParseUint(t[1],10,64);x.MemoryTotal,_=strconv.ParseUint(t[2],10,64)}
  case "DISK":if len(t)>2{x.DiskUsed,_=strconv.ParseUint(t[1],10,64);x.DiskTotal,_=strconv.ParseUint(t[2],10,64)}
  case "NET":x.Network=t[1]
+ case "CPU":if n,e:=strconv.ParseFloat(t[1],64);e==nil&&n>=0&&n<=100{x.CPUPercent=&n}
  case "CONTAINER":var c struct{ID string;Names string;Status string;State string};if json.Unmarshal([]byte(t[1]),&c)==nil{item:=Container{ID:c.ID,Names:c.Names,Status:c.Status,State:c.State};byID[c.ID]=len(x.Containers);x.Containers=append(x.Containers,item)}
  case "STATS":var c struct{ID string;Name string;CPUPerc string;MemUsage string;NetIO string};if json.Unmarshal([]byte(t[1]),&c)==nil{for i:=range x.Containers{if strings.HasPrefix(x.Containers[i].ID,c.ID)||x.Containers[i].Names==c.Name {x.Containers[i].CPU=c.CPUPerc;x.Containers[i].Memory=c.MemUsage;x.Containers[i].NetIO=c.NetIO;break}}}
  }}
