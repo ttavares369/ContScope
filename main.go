@@ -32,7 +32,7 @@ func jsonResponse(w http.ResponseWriter, status int, data any) { w.Header().Set(
 func load() ([]Server,error) { b,e:=os.ReadFile(storePath); if errors.Is(e,os.ErrNotExist) {return []Server{},nil}; if e!=nil{return nil,e}; var s []Server; e=json.Unmarshal(b,&s); return s,e }
 func save(s []Server) error { b,e:=json.MarshalIndent(s,"","  ");if e!=nil{return e};if e=os.MkdirAll(filepath.Dir(storePath),0700);e!=nil{return e};p:=storePath+".tmp";if e=os.WriteFile(p,b,0600);e!=nil{return e};return os.Rename(p,storePath) }
 func valid(s Server) bool { return nameSafe.MatchString(s.Name)&&safe.MatchString(s.Host)&&safe.MatchString(s.User)&&safe.MatchString(s.Key)&&s.Port>=1&&s.Port<=65535 }
-func auth(next http.HandlerFunc) http.HandlerFunc { return func(w http.ResponseWriter,r *http.Request) { u,p,ok:=r.BasicAuth();wantU:=os.Getenv("CONTSCOPE_USER");wantP:=os.Getenv("CONTSCOPE_PASSWORD");if !ok||subtle.ConstantTimeCompare([]byte(u),[]byte(wantU))!=1||subtle.ConstantTimeCompare([]byte(p),[]byte(wantP))!=1 {w.Header().Set("WWW-Authenticate",`Basic realm="ContScope"`);http.Error(w,"Authentication required",401);return};if r.Method!="GET" { origin:=r.Header.Get("Origin");if origin!=""&&origin!="http://"+r.Host&&origin!="https://"+r.Host {http.Error(w,"Invalid origin",403);return} };next(w,r) } }
+func auth(next http.HandlerFunc) http.HandlerFunc { return func(w http.ResponseWriter,r *http.Request) { u,p,ok:=r.BasicAuth();if !ok||!verifyAdmin(u,p) {w.Header().Set("WWW-Authenticate",`Basic realm="ContScope"`);http.Error(w,"Authentication required",401);return};if r.Method!="GET" { origin:=r.Header.Get("Origin");if origin!=""&&origin!="http://"+r.Host&&origin!="https://"+r.Host {http.Error(w,"Invalid origin",403);return} };next(w,r) } }
 const remote = `set -u
 sample_cpu() { awk '$1=="cpu" {idle=$5+$6; total=0; for(i=2;i<=NF;i++)total+=$i; printf "%.0f %.0f\n",idle,total;exit}' /proc/stat; }
 sample_net() { awk 'NR>2 && $1 !~ /lo:/ {rx+=$2;tx+=$10} END{printf "%.0f %.0f\n",rx,tx}' /proc/net/dev; }
@@ -91,6 +91,9 @@ func parseSnapshot(x Snapshot,output string) Snapshot {
  _ = byID; x.Findings=findingsForSnapshot(x);return x
 }
 func main(){
+ storePath=os.Getenv("CONTSCOPE_DATA");if storePath==""{storePath="./servers.json"}
+ if len(os.Args)>1 && os.Args[1]=="reset-admin" {password,err:=resetAdminAccount();if err!=nil{log.Fatal(err)};fmt.Println("ContScope admin password reset. Username: admin");fmt.Println("New password: "+password);return}
+ generatedPassword,firstRun,err:=initAdminAccount();if err!=nil{log.Fatal("Cannot initialize admin access: ",err)}
  http.HandleFunc("/api/alerts",auth(logMonitor.serveAlerts))
  http.HandleFunc("/api/telegram",auth(serveTelegram))
  http.HandleFunc("/api/labels",auth(serveLabels))
@@ -101,8 +104,7 @@ func main(){
  http.Handle("/assets/",http.FileServer(http.FS(logoFiles)))
  http.HandleFunc("/api/diagnostics",auth(serveDiagnostics))
  http.HandleFunc("/api/logs",auth(logMonitor.serveLogs))
- storePath=os.Getenv("CONTSCOPE_DATA");if storePath==""{storePath="./servers.json"}
- if os.Getenv("CONTSCOPE_USER")==""||len(os.Getenv("CONTSCOPE_PASSWORD"))<16{log.Fatal("Set CONTSCOPE_USER and CONTSCOPE_PASSWORD (at least 16 characters)")}
+ 
  if _,err:=masterKey();err!=nil{log.Fatal("Cannot initialize secure local credential storage: ",err)}
  go logMonitor.scanLoop()
  addr:=os.Getenv("CONTSCOPE_ADDR");if addr==""{addr="127.0.0.1:8080"}
@@ -116,7 +118,7 @@ func main(){
  if r.Method=="DELETE"{out:=[]Server{};for _,s:=range servers{if s.ID!=id{out=append(out,s)}};e=save(out);if e==nil&&found.AuthMethod!=""{_ =deleteManagedSecret(id)};mu.Unlock();if e!=nil{http.Error(w,"Store error",500);return};w.WriteHeader(204);return};mu.Unlock()
  if r.Method!="GET"{w.WriteHeader(405);return};jsonResponse(w,200,collect(*found))
  }))
- server:= &http.Server{Addr:addr,ReadHeaderTimeout:5*time.Second};fmt.Println("ContScope listening on",addr);log.Fatal(server.ListenAndServe())
+ server:= &http.Server{Addr:addr,ReadHeaderTimeout:5*time.Second};startupMessage(generatedPassword,firstRun);fmt.Println("ContScope listening on",addr);log.Fatal(server.ListenAndServe())
 }
 var page=template.Must(template.New("app").Parse(htmlPage))
 //go:embed assets/contscope-mark.svg assets/contscope-logo.svg
