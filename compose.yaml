@@ -1,6 +1,6 @@
 services:
   contscope:
-    image: ghcr.io/ttavares369/contscope:${CONTSCOPE_IMAGE_TAG:-v0.1.0-beta.1}
+    image: ghcr.io/ttavares369/contscope:${CONTSCOPE_IMAGE_TAG:-beta}
     restart: unless-stopped
     environment:
       CONTSCOPE_ADDR: ":8080"
