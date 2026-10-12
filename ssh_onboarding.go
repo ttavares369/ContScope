@@ -59,11 +59,31 @@ func validDraft(d serverDraft) bool {
    strings.Contains(d.Secret,"-----BEGIN EC PRIVATE KEY-----"))}
  return false
 }
-func masterKey() ([]byte,error){
- raw:=os.Getenv("CONTSCOPE_MASTER_KEY")
- k,err:=hex.DecodeString(raw)
- if err!=nil||len(k)!=32{return nil,errors.New("CONTSCOPE_MASTER_KEY must be 64 hexadecimal characters (32 random bytes)")}
- return k,nil
+func localKeyPath() string {return filepath.Join(filepath.Dir(storePath),"local-secret.key")}
+func masterKey() ([]byte,error) {
+ path:=localKeyPath()
+ raw,err:=os.ReadFile(path)
+ if err==nil {
+  if len(raw)!=32{return nil,errors.New("invalid local encryption key")}
+  return raw,nil
+ }
+ if !errors.Is(err,os.ErrNotExist){return nil,err}
+ // Never overwrite a lost key if encrypted credentials already exist.
+ if info,e:=os.Stat(credentialsPath());e==nil && info.Size()>2{
+  return nil,errors.New("local encryption key is missing; restore the original /data volume or reconfigure credentials")
+ }
+ if e:=os.MkdirAll(filepath.Dir(path),0700);e!=nil{return nil,e}
+ key:=make([]byte,32)
+ if _,e:=rand.Read(key);e!=nil{return nil,e}
+ file,e:=os.OpenFile(path,os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
+ if errors.Is(e,os.ErrExist){
+  raw,e:=os.ReadFile(path);if e!=nil||len(raw)!=32{return nil,errors.New("cannot load concurrent local encryption key")};return raw,nil
+ }
+ if e!=nil{return nil,e}
+ _,e=file.Write(key)
+ if closeErr:=file.Close();e==nil{e=closeErr}
+ if e!=nil{_ =os.Remove(path);return nil,e}
+ return key,nil
 }
 func credentialsPath() string{return filepath.Join(filepath.Dir(storePath),"ssh-credentials.json")}
 func encryptedCredentials() (map[string]string,error){
