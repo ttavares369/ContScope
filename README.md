@@ -121,3 +121,9 @@ After the image exists, download the versioned release Compose file as `compose.
 ## Change the admin password
 
 Select **Change password** in the ContScope dashboard. Enter the current password, a new password of 14–256 characters, and confirmation. A successful change immediately invalidates the previous password for new HTTP requests; your browser may retain HTTP Basic authentication credentials until its tab or browser session is closed. Passwords are never logged or returned by the API. The password change is only available for the automatically managed admin account. When `CONTSCOPE_USER` and `CONTSCOPE_PASSWORD` environment overrides are used, change the values in the deployment environment instead. The emergency CLI command `docker compose exec contscope /usr/local/bin/contscope reset-admin` remains available for local account recovery.
+
+## Troubleshooting the Add Server flow
+
+Choose **Username and password** (the default), or switch to an SSH private key. Enter server name, IP/hostname, port, username and credentials. Click **Test SSH connection**; on first use it will guide you through host fingerprint discovery. Compare a SHA256 fingerprint with a trusted source, select the matching key, then click **Test SSH connection** again. After a successful test, **Save server** becomes available. Errors are displayed below the form instead of failing silently. The server administrator must allow the chosen SSH authentication method. DNS and SSH access originate from the ContScope container, not directly from the browser.
+
+If a browser cannot open the local panel while another can, investigate browser proxy settings, DNS-over-HTTPS and HTTP/HTTPS upgrades. Test `http://127.0.0.1:8080` directly and consider adding `localhost, 127.0.0.1` to the browser's proxy bypass list. These settings are browser-specific and are not fixed by reinstalling the container.
