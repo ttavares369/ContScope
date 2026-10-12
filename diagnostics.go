@@ -58,7 +58,7 @@ func serveDiagnostics(w http.ResponseWriter, r *http.Request) {
 	}
 	output, truncated, err := runSSHScript(server, script, timeout, limit)
 	if err != nil {
-		jsonResponse(w, http.StatusBadGateway, map[string]string{"error": "Unable to collect advanced diagnostics"})
+		jsonResponse(w, http.StatusBadGateway, map[string]string{"error": "Unable to collect " + view + " diagnostics: " + err.Error()})
 		return
 	}
 	result := parseDiagnostics(view, output)
@@ -96,9 +96,18 @@ fi
 	case "events":
 		since := strconv.FormatInt(time.Now().Add(-30*time.Minute).Unix(), 10)
 		until := strconv.FormatInt(time.Now().Unix(), 10)
-		return "if command -v docker >/dev/null 2>&1; then docker events --since " + since + " --until " + until +
-				" --format '{{json .}}' 2>/dev/null | tail -n 60 | while IFS= read -r line; do printf 'EVENT|%s\\n' \"$line\"; done; fi\n",
-			18 * time.Second, 48 * 1024, nil
+		// Docker events include every container label by default. Large Coolify/
+		// Traefik labels can overflow the SSH cap even for only a few events.
+		// Project the needed fields before transmission; names remain JSON-escaped.
+		return fmt.Sprintf(`if ! command -v docker >/dev/null 2>&1; then
+  printf 'NOTICE|Docker is not installed on this host.\n'
+elif ! docker info --format '{{.ServerVersion}}' >/dev/null 2>&1; then
+  printf 'NOTICE|Docker daemon unavailable or insufficient Docker permissions.\n'
+else
+  docker events --since %s --until %s --format 'EVENT|{{.Type}}|{{.Action}}|{{.Time}}|{{.Actor.ID}}|{{json (index .Actor.Attributes "name")}}' 2>/dev/null | tail -n 60
+fi
+`, since, until), 18 * time.Second, 48 * 1024, nil
+
 	case "container":
 		if !containerIDRe.MatchString(container) {
 			return "", 0, 0, fmt.Errorf("invalid container ID")
@@ -117,6 +126,10 @@ func parseDiagnostics(kind, data string) DiagnosticResponse {
 	scan.Buffer(make([]byte, 4096), 256*1024)
 	for scan.Scan() {
 		line := scan.Text()
+		if strings.HasPrefix(line, "NOTICE|") {
+			result.Notice = strings.TrimPrefix(line, "NOTICE|")
+			continue
+		}
 		switch kind {
 		case "processes":
 			t := strings.Fields(line)
@@ -174,7 +187,24 @@ func parseDiagnostics(kind, data string) DiagnosticResponse {
 					Attributes map[string]string
 				}
 			}
-			if json.Unmarshal([]byte(strings.TrimPrefix(line, "EVENT|")), &row) == nil {
+			valid := false
+			if strings.HasPrefix(line, "EVENT|{") {
+				valid = json.Unmarshal([]byte(strings.TrimPrefix(line, "EVENT|")), &row) == nil
+			} else {
+				fields := strings.SplitN(line, "|", 6)
+				if len(fields) == 6 {
+					row.Type = fields[1]
+					row.Action = fields[2]
+					row.Time, _ = strconv.ParseInt(fields[3], 10, 64)
+					row.Actor.ID = fields[4]
+					var name string
+					if json.Unmarshal([]byte(fields[5]), &name) == nil {
+						row.Actor.Attributes = map[string]string{"name": name}
+						valid = true
+					}
+				}
+			}
+			if valid {
 				name := row.Actor.Attributes["name"]
 				if name == "" {
 					name = row.Actor.ID

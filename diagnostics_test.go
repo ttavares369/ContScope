@@ -41,3 +41,21 @@ func TestParseDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+func TestCompactEventsExcludeLabelsAndParseEscapedNames(t *testing.T) {
+	script, _, _, err := diagnosticScript("events", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(script, "{{json .}}") || !strings.Contains(script, "{{.Actor.ID}}") {
+		t.Fatal("event script must project fields before transmission")
+	}
+	result := parseDiagnostics("events", "EVENT|container|health_status: healthy|1720000000|abcdef123456789|\"api|example\"\n")
+	if len(result.Rows) != 1 || result.Rows[0]["name"] != "api|example" || result.Rows[0]["action"] != "health_status: healthy" {
+		t.Fatalf("bad compact event parse: %+v", result)
+	}
+	unavailable := parseDiagnostics("events", "NOTICE|Docker daemon unavailable or insufficient Docker permissions.\n")
+	if unavailable.Notice == "" || len(unavailable.Rows) != 0 {
+		t.Fatal("missing Docker availability notice")
+	}
+}

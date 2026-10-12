@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -54,9 +56,29 @@ func TestOpenSSHIntegration(t *testing.T) {
 		t.Fatal("real Docker fixture not found in SSH telemetry")
 	}
 	requireStatus(t, apiRequest(h, http.MethodGet, "/api/logs?server="+s.ID+"&container="+container.ID, nil), 200)
-	for _, view := range []string{"processes", "storage", "network", "events", "container"} {
-		requireStatus(t, apiRequest(h, http.MethodGet, "/api/diagnostics?server="+s.ID+"&view="+view+"&container="+container.ID, nil), 200)
+	// Confirm the large-label fixture reproduces the former event-output overflow.
+	secret, err := managedSecret(s.ID)
+	if err != nil {
+		t.Fatal(err)
 	}
+	oldEvents := fmt.Sprintf("docker events --since %d --until %d --format '{{json .}}' | tail -n 60\n", time.Now().Add(-30*time.Minute).Unix(), time.Now().Unix())
+	if _, err = runSSHAuthenticated(s, secret, oldEvents, 18*time.Second, 48*1024); err == nil || !strings.Contains(err.Error(), "safety limit") {
+		t.Fatalf("oversized event fixture did not reproduce the former failure: %v", err)
+	}
+	for _, view := range []string{"processes", "storage", "network", "events", "container"} {
+		response := apiRequest(h, http.MethodGet, "/api/diagnostics?server="+s.ID+"&view="+view+"&container="+container.ID, nil)
+		requireStatus(t, response, 200)
+		if view == "events" {
+			var result DiagnosticResponse
+			if json.Unmarshal(response.Body.Bytes(), &result) != nil || len(result.Rows) == 0 {
+				t.Fatal("compact events missing")
+			}
+			if strings.Contains(response.Body.String(), strings.Repeat("X", 100)) {
+				t.Fatal("container labels leaked into diagnostic events")
+			}
+		}
+	}
+
 	wrong := s
 	parts := strings.Fields(s.HostKey)
 	parts[2] = "AAAAC3NzaC1lZDI1NTE5AAAAICQW8kjj/o15OWAUOwudDVXuPkCTFb08qOIwFy3WHYCN"
