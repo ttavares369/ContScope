@@ -78,4 +78,12 @@ We may add an explicitly opt-in BYOK AI integration in a future release; it must
 
 ## Licensing
 
-The prototype currently uses the MIT license. A switch to Apache 2.0 or another open-source license has **not** been decided or implemented. Commercial support is optional and does not change access to the open-source features.
+The current development branch uses the Apache License, Version 2.0. Previous published MIT-licensed revisions remain MIT-licensed; their attribution is preserved in NOTICE and Git history. Commercial support is optional and does not change access to open-source features.
+
+## Request professional assistance
+
+The optional **Get expert help** button opens a local review dialog for email contact at **tiago@jupiterti.com**. Select a configured host and explicitly choose **Prepare report**; by default the report includes only a bounded diagnostic snapshot and no raw log excerpts. An optional checkbox includes up to ten recent error excerpts (server-side best-effort secret/email/IP masking). The report is shown as editable JSON before you choose **Download JSON report**. **Compose email** opens your local mail application via `mailto:`; users attach the downloaded file themselves. The app does not send mail, upload reports, or send monitoring data to Jupiter TI. Automated redaction is not guaranteed to catch every secret; check carefully before emailing. The support link to the institutional website remains optional.
+
+## Donations
+
+The project welcomes voluntary support, but no payment provider or sponsorship URL has been activated or configured. A GitHub Sponsors link can be added once a valid sponsor account is created. Donation payments are not required for any feature.
