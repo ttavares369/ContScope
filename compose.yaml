@@ -3,8 +3,7 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      CONTSCOPE_USER: ${CONTSCOPE_USER:?Set in .env}
-      CONTSCOPE_PASSWORD: ${CONTSCOPE_PASSWORD:?Set in .env}
+      CONTSCOPE_ADDR: ":8080"
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
