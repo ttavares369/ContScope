@@ -1,7 +1,7 @@
 FROM golang:1.23-alpine AS build
 WORKDIR /src
 COPY go.mod ./
-COPY main.go logs.go labels.go diagnostics.go findings.go guidance.go support.go ssh_onboarding.go telegram.go ./
+COPY main.go logs.go labels.go diagnostics.go findings.go guidance.go support.go ssh_onboarding.go telegram.go server_tags.go ./
 COPY assets/ ./assets/
 ARG VERSION=dev
 ARG VCS_REF=unknown
