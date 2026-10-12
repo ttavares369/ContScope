@@ -2,132 +2,159 @@
 
 ![ContScope logo](assets/contscope-logo.svg)
 
+**Lightweight, self-hosted Linux server and Docker container monitoring over SSH.**
 
-**Lightweight, self-hosted Docker container and Linux server monitoring over SSH.**
+One container. No monitoring agents. No external database. A read-only dashboard for managing visibility across customers, clouds and environments.
 
-ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It uses SSH to inspect remote servers and Docker containers without installing permanent monitoring agents on the hosts.
+![Desktop overview](docs/images/overview-desktop.png)
 
-## Initial prototype
+*Example workspace from controlled test fixtures, not production infrastructure.*
 
-- Register multiple SSH hosts and switch between a combined overview and each host.
-- Assign a local display name and optional description to each container from the web UI. The original Docker container name stays unchanged; metadata is persisted locally and linked to the server + Docker container name.
-- Display Linux CPU utilization, load average, RAM usage, root disk usage, uptime, and network throughput rates.
-- List Docker containers, current status (including healthchecks when configured) and CPU, RAM and network snapshots reported by Docker.
-- Refresh manually or every 30 seconds.
-- Open the last 200 lines of a container's Docker logs from the Details button (limited to 128 KiB).
-- Periodic (90-second) bounded scanning for case-insensitive whole-word `error`, `fatal`, `panic`, and `exception` in recent running-container logs. Shows up to 200 distinct local alerts; log scan cursor persisted across app restarts.
-- English responsive web UI, HTTP Basic authentication, and a persistent local JSON server list.
-- Read-only remote inspection: no restart, stop or delete controls.
-- **Advanced diagnostics are on demand**: top CPU-consuming processes (ps), filesystem/Docker disk use (df, docker system df), interface traffic and established connection counts (procfs, ss), recent Docker events and individual container inspect details. All results are bounded and request-triggered, not collected continuously.
-- The front page stays focused on fast health, utilization and container status. Per-server diagnostics are behind buttons.
+## Install and update
 
-**Limitations:** current version does not yet provide historical charts, external notifications beyond opt-in Telegram log-error alerts, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data. Password authentication may be disabled by the monitored host's SSH policy.
-
-## Quick start
-
-Once a versioned image has been published to the GitHub Container Registry, download the matching `compose.release.yaml` as `compose.yaml` and run:
+Clone this repository and start the ready-to-run beta image:
 
 ```bash
+git clone https://github.com/ttavares369/ContScope.git
+cd ContScope
 docker compose up
 ```
 
-On its **first** run, ContScope creates an `admin` account, prints a random password and the local URL `http://localhost:8080` in the container logs. No manual password or master key is needed. The dashboard stays bound to loopback, so on a remote VPS use SSH tunneling or an HTTPS proxy. The first password is displayed only at account creation. **Important:** Docker log collectors and terminal scrollback may retain it, so protect logs and change/revoke the password when necessary.
+Open **http://localhost:8080**. On the first run, ContScope prints a random password for the `admin` account in the container logs. Save it. Restarts retain the account without printing the password again. For detached installations:
 
-For detached installations, use `docker compose up -d` followed by `docker compose logs contscope` to see the initial password. Subsequent restarts do not print it again. If you lose access, run:
+```bash
+docker compose up -d
+docker compose logs contscope
+```
+
+The default Compose uses `ghcr.io/ttavares369/contscope:beta`, binds to loopback and preserves its named data volume. Use an SSH tunnel or an HTTPS proxy when accessing a remote installation. Protect container logs: the initial password may remain in log storage and terminal scrollback.
+
+Update an existing installation **from its existing Compose directory**, preserving the original project name and volume:
+
+```bash
+docker compose pull contscope
+docker compose up -d contscope
+```
+
+No server re-registration or storage migration is needed. Do not remove the data volume. Back it up before upgrading. Set `CONTSCOPE_IMAGE_TAG` to choose a published version rather than following beta. AMD64 and ARM64 images are published by GitHub Actions after changes to `main`; `v*` tags belonging to `main` publish versioned images. Check the publishing workflow for the actual release status.
+
+To build locally:
+
+```bash
+docker compose -f compose.dev.yaml up --build
+```
+
+## Connect your first server
+
+1. Select **Add Server** from Overview or Servers.
+2. Enter the server name, IP/hostname, SSH username and password. Names support up to 64 ASCII letters, digits, spaces, underscores, dots and hyphens.
+3. For key authentication, select **Private key** and paste or upload an unencrypted SSH private key. Passphrase-encrypted keys are not supported.
+4. The SSH port defaults to **22**; change it under **Advanced options** if necessary.
+5. Click **Connect & Add Server**. The connection is tested before credentials are saved.
+
+The first connection uses **trust on first use (TOFU)**: the SSH host key is discovered and pinned after successful authentication. Verify this first connection independently through a trusted network or server console. Future identity changes fail closed. Editing credentials never silently replaces that trust. Address changes are checked against the already trusted public key.
+
+Servers remain registered if monitoring fails. Offline means the SSH collection failed; it does **not** prove the server itself is down. Docker metrics require the SSH user to access Docker. That permission can confer root-equivalent privileges even though ContScope only issues read-only commands.
+
+## Workspace
+
+| Area | Purpose |
+| --- | --- |
+| Overview | Server/container totals, priority findings, compact server cards and recent log alerts |
+| Servers | Search by name/IP, tag/status filters, sorting, cards/list view and server details |
+| Server details | Summary, Containers, Logs, Diagnostics and Settings tabs |
+| Containers | All connected-host containers; name/server/status filters; CPU/memory sorting; details and logs |
+| Alerts | Severity/server/origin filters, observed evidence, suggested checks and log scan coverage |
+| Tags & Groups | Create, rename, recolor, delete and assign reusable tags |
+| Diagnostics | Request processes, storage, network and recent Docker events explicitly |
+| Settings | Change the administrative password and configure optional Telegram notifications |
+| About / Help | Version/build/commit/license, GitHub links, recovery instructions and optional support report |
+
+The sidebar collapses on desktop and opens as a drawer on mobile. Forms use accessible native dialogs, keyboard focus and inline errors. Tables become labeled cards on small screens. Preferences for sidebar and server view stay in the browser.
+
+### Servers and credentials
+
+Open a server's **Settings** tab to edit its name, host, port, user or SSH credential, assign tags, test the connection or remove it. Leave the credential blank to retain it. Name-only edits do not require a connection. Changes affecting SSH are verified before replacing the working configuration. Failed verification retains existing settings and credentials.
+
+Legacy installations using a mounted SSH key can retain that configuration when editing names/tags. Switching to managed credentials reads the existing trusted `known_hosts` entry and verifies the connection; it never silently discovers a replacement identity. Restore the original trust file if it is missing.
+
+Removing a server removes monitoring registration and the managed encrypted SSH credential. It does not change the remote host, Docker containers, images or volumes.
+
+### Tags
+
+Create tags from **Tags & Groups**, choose from eight colors, and assign up to eight tags from a server's Settings tab. A maximum of 80 reusable tags is supported. Tag names are unique without regard to case. The Servers page includes tag and Untagged filters. Deleting a tag detaches it from associated servers while preserving their other tags and connection settings.
+
+![Tag management](docs/images/tags-desktop.png)
+
+### Containers, logs and findings
+
+Friendly names and descriptions are local metadata linked to the server and original Docker container name. **Details** opens metadata editing and a bounded Docker inspect result. ContScope never renames the actual container.
+
+**Logs** retrieves up to 200 timestamped lines (128 KiB) on demand with a local text filter. Advanced commands are fixed scripts, never arbitrary user commands. Environment variables and full Docker inspect payloads are not exposed. Logs may still contain private information: limit dashboard access to trusted users.
+
+CPU and network are short samples, not historical graphs. High CPU/RAM, root disk pressure, unhealthy/restarting/dead containers and SSH/Docker availability generate explainable findings. Cleanly exited jobs and containers without a healthcheck are not automatically problems. The Healthy counter counts running containers with a passing healthcheck.
+
+Snapshots refresh every 30 seconds while the page is visible, share a 25-second server-side cache and limit concurrent collection to four hosts. Collection has timeouts and output limits. Diagnostics run only when requested. No continuously expanded process, storage or Docker events panel lives on Overview.
+
+### Log alert coverage
+
+Every 90 seconds the scanner checks up to 200 running containers per host, at most 300 recent log lines each, and 768 KiB of aggregate output. It matches whole words `error`, `fatal`, `panic` and `exception`, so these alerts are heuristics, not proof of root cause. Stable fingerprints deduplicate overlapping scans. The latest 200 alerts are held in memory; restart clears alert history while persisted cursors avoid repeatedly importing old errors.
+
+Collection failures and coverage limits are shown in Alerts. Large log volumes, unavailable logging drivers, pauses and connection failures can cause missed lines. No monitoring continues when ContScope is stopped.
+
+### Telegram (optional)
+
+Open **Settings → Notifications**. Create a bot through Telegram's @BotFather, start a conversation or add it to your group, and enter its bot token and numeric chat ID. **Send test message** tests the entered configuration without saving it. Enable and save to notify about new log errors. Leave the token blank to retain the saved token, or disable notifications without supplying a new token.
+
+The token is encrypted at rest and never returned by a GET API. A 5–1440 minute per-server/container/category cooldown defaults to 30 minutes. Notifications include the server name, container ID abbreviation and category, never raw logs. Telegram is a third-party service; those selected details leave the instance only when enabled or an explicit test is requested. Health snapshot findings are displayed in the dashboard; automatic Telegram delivery is currently limited to log-error alerts.
+
+### Account and recovery
+
+**Settings → Account** changes the local admin password (14–256 characters). The old password immediately stops authenticating new requests; browsers may cache Basic Auth credentials until the tab/browser is reopened. If credentials are overridden through `CONTSCOPE_USER`/`CONTSCOPE_PASSWORD`, change the deployment environment instead.
+
+Reset the automatically managed account locally if needed:
 
 ```bash
 docker compose exec contscope /usr/local/bin/contscope reset-admin
 ```
 
-The admin verification data, encrypted SSH credentials, tags and the automatically generated encryption key remain in the persistent Docker volume. Back up this volume securely. To build from source instead of pulling a registry image, run `docker compose -f compose.dev.yaml up --build`.
+## Persistence and security
 
-After login, choose **Add server**, enter the SSH host, port and username, then select a password or upload a private key. Independently confirm the remote SSH host fingerprint, test the connection and save.
+The existing JSON files remain compatible: `servers.json`, `server-tags.json`, `container-labels.json`, `ssh-credentials.json`, `local-secret.key`, `telegram.json`, `admin-auth.json` and log cursors live in the data volume. Credentials use AES-256-GCM with a locally generated key. Private files use mode `0600`; directories use `0700`. Back up **the entire volume**, including its encryption key. A missing key is not silently replaced when SSH or Telegram ciphertext exists.
 
-**Security:** The SSH account's access to Docker may grant root-equivalent privileges on the remote host; monitoring requests are read-only but that does not make the SSH account itself read-only. The local HTTP UI is not suitable for exposure on a public network without HTTPS and appropriate access controls.
+HTTP Basic authentication protects the panel, JavaScript/CSS and API routes. Browser-origin and Fetch Metadata checks reject cross-site mutations. The dashboard applies CSP, frame denial, content-type protection and a no-referrer policy. Dynamic data is escaped or inserted as text. Passwords/private keys never appear in SSH command arguments. SSH errors are classified without returning raw stderr.
 
-## Development
+The production image runs as a non-root user with a read-only root filesystem and writable `/data` volume and `/tmp`. No Docker socket mount is required. Expose the panel only through HTTPS or a trusted tunnel; Basic Auth itself does not encrypt HTTP traffic. ContScope read-only scripts do not make the remote account's underlying permissions read-only.
+
+## Development and validation
+
+Go 1.23 or later and OpenSSH clients are required for local execution. There are no third-party Go runtime dependencies and no JavaScript framework/runtime in the production container. Frontend files live separately in `web/` and are embedded in the binary.
 
 ```bash
 export CONTSCOPE_USER=admin
 export CONTSCOPE_PASSWORD='replace-with-a-long-random-password'
-go test ./...
+go test -race ./...
+go vet ./...
 go run .
 ```
 
-## License
+CI validates Go formatting, JavaScript syntax, authenticated APIs, tag CRUD, persistence, account recovery, encryption, server edit rollback and builds for AMD64/ARM64. A disposable loopback OpenSSH server and real Docker fixture exercise onboarding, pinned identity rejection, Linux/Docker telemetry, logs, diagnostics, editing and credential removal. Browser tests exercise real local CRUD APIs with controlled SSH telemetry fixtures, plus 65 route/viewport checks at 1920×1080, 1366×768, 768×1024, 390×844 and 320×640. Docker checks verify first-run login and persistent tags after container restart.
 
-Apache License 2.0. Earlier MIT-licensed revisions retain their original license.
+Browser tests require Node.js only in development:
 
-## Progressive troubleshooting
+```bash
+npm install --no-save --no-package-lock playwright@1.51.1
+npx playwright install --with-deps chromium
+go build -o /tmp/contscope-app .
+node tests/browser.cjs
+```
 
-The home view emphasizes a short set of prioritized findings (CPU over 90%, memory over 90%, root disk over 85%, unhealthy/restarting containers, SSH and Docker data availability). Each finding includes its observed evidence and a suggested **read-only** next diagnostic; no automatic corrective actions are taken. Warnings are heuristics and are not proof of root cause. Stopped containers are not automatically labeled broken because they may be intentional jobs. Deep diagnostics are loaded only on demand and initially show a short, expandable list; users request further detail themselves.
+See [mobile overview](docs/images/overview-mobile.png). Screenshots use fixtures; they do not claim verification against production customer servers or delivery to a real Telegram chat.
 
-This early implementation does not yet predict future failures or guarantee proactive alerts when the local machine is powered off. Trends, configured thresholds, alert acknowledgment and contextual container-log drill-down remain future work.
+## Limitations and support
 
-## Lightweight architecture
+No historical charts, Kubernetes/Podman integration, configurable thresholds, alert acknowledgment or automatic remote remediation is implemented. Telegram network delivery depends on the instance's connectivity and the bot's permissions. Local tests cannot certify every remote Linux/Docker configuration or hundreds of hosts under load.
 
-One statically compiled Go backend serves the web UI and handles SSH sessions. It has no Prometheus, Grafana, external database, Node.js runtime, or permanent remote collector. Advanced diagnostics are requested explicitly and constrained with fixed read-only scripts, timeouts, and output limits. Network peer summaries may contain remote IP addresses; Docker logs may contain sensitive information, so limit UI access to trusted users. 
+ContScope is licensed under **Apache 2.0**. Earlier MIT revisions retain their original license. Support the project by starring the repository, reporting bugs or contributing. Donation payments remain unavailable until a verified funding destination is configured.
 
-## Log alert limitations
-
-The scanner checks up to 200 **running** containers per host every 90 seconds, examines at most 300 log lines per container (up to 768 KiB of aggregate output), and attempts a 15-minute maximum lookback after downtime. The initial scan looks back a few seconds, not through historical logs. This is an in-dashboard *best-effort* warning, **not guaranteed lossless detection**: bursts, log drivers without `docker logs` support, inaccessible Docker sockets, large log volumes, or stopped hosts can cause missed matches. Matches are text heuristics, not proof of an actual service failure; false positives are expected. The local dashboard must be running to scan. Keep independent endpoint/uptime alerting.
-
-The `error`, `fatal`, `panic` and `exception` expressions are currently predefined. External notifications and custom rules are not yet implemented. Container log text may contain sensitive information; only grant trusted users access to the dashboard.
-
-## Local troubleshooting and optional support
-
-ContScope classifies common error messages locally with lightweight deterministic Go rules (storage pressure, memory, networking, DNS, TLS, permissions, file descriptors, process failures and timeouts). It displays a cautious explanation and suggested next check, with the original log hidden behind an expandable section. These suggestions are hypotheses and do not diagnose root causes on their own. No external AI API is required or contacted.
-
-The optional **Get expert help** link opens https://www.jupiterti.com/servicos in a separate browser tab. It is an external professional-services link, not part of monitoring. ContScope never automatically sends logs, metrics, identifiers, SSH details or technical reports to Jupiter TI. Opening an external website normally exposes standard connection metadata (such as the visitor's IP) to that site.
-
-We may add an explicitly opt-in BYOK AI integration in a future release; it must allow users to inspect and redact a request before any data leaves the local app. The software remains useful offline and never permits autonomous remote changes.
-
-## Licensing
-
-The current development branch uses the Apache License, Version 2.0. Previous published MIT-licensed revisions remain MIT-licensed; their attribution is preserved in NOTICE and Git history. Commercial support is optional and does not change access to open-source features.
-
-## Request professional assistance
-
-The optional **Get expert help** button opens a local review dialog for email contact at **tiago@jupiterti.com**. Select a configured host and explicitly choose **Prepare report**; by default the report includes only a bounded diagnostic snapshot and no raw log excerpts. An optional checkbox includes up to ten recent error excerpts (server-side best-effort secret/email/IP masking). The report is shown as editable JSON before you choose **Download JSON report**. **Compose email** opens your local mail application via `mailto:`; users attach the downloaded file themselves. The app does not send mail, upload reports, or send monitoring data to Jupiter TI. Automated redaction is not guaranteed to catch every secret; check carefully before emailing. The support link to the institutional website remains optional.
-
-## Donations
-
-The project welcomes voluntary support, but no payment provider or sponsorship URL has been activated or configured. A GitHub Sponsors link can be added once a valid sponsor account is created. Donation payments are not required for any feature.
-
-## Product identity and About
-
-The ContScope header and favicon use a compact container-and-target SVG mark inspired by the selected brand concept; the full vector logo is included at `assets/contscope-logo.svg`. The **About** dialog shows the version, commit hash, build date, Apache 2.0 license, GitHub repository, optional donation status and professional support contact. Donation buttons will be activated only after a real funding destination is configured.
-
-Image releases can embed build data with `docker build --build-arg VERSION=beta --build-arg VCS_REF=$(git rev-parse --short HEAD) --build-arg BUILD_DATE=$(date -u +%FT%TZ) .`. Development builds show `dev` / `unknown` rather than claiming a published release.
-
-## SSH onboarding security boundaries
-
-Host discovery via `ssh-keyscan` only displays a **candidate** host key. The user must verify its SHA256 fingerprint out of band before trusting it. A successful connection test is required prior to saving and is cryptographically bound to the exact settings for five minutes. The application stores credentials encrypted with AES-256-GCM using a randomly generated local key stored inside the private Docker volume. A 32-byte random key is generated automatically on first run. Credentials are never returned to the browser by a GET endpoint; private keys/passwords are transported to the local API only during explicit setup/test/save requests. Protect the browser connection, the `.env` file, the Docker volume, and any copies of the uploaded private key. Do not upload passphrase-encrypted private keys yet; support for them is planned. The private key material is used transiently and the application does not install anything on monitored hosts.
-
-## Telegram alerts (optional)
-
-Open **Telegram alerts** in the dashboard. Create a bot with Telegram's @BotFather, open a conversation with the bot or add it to the desired group, enter its **Bot token** and numeric **Chat ID**, then use **Send test message**. Enable notifications and save. Bot credentials are encrypted locally; the existing token is never returned to the browser. A per-server/container/category cooldown (default 30 minutes, configurable between 5 and 1440) limits notifications, and alerts are sent only for newly detected log error signatures. Telegram sends over HTTPS from the ContScope instance only when enabled. Only the selected server name, container ID abbreviation and error category are sent; raw logs are never sent. This is best-effort monitoring; logs may be missed due to rate limits, outages or large log volume. The settings and SSH credentials are stored in the same persistent volume. Telegram is a third-party provider, so the information in alert messages leaves the local instance when enabled.
-
-## Organize servers with color tags
-
-Use **Organize servers with colors** to create reusable color-coded tags such as Company A, Company B, AWS, Azure, production or staging. Up to eight tags can be assigned to each registered server, and a tag may be reused across servers. The dashboard shows the tags next to server names, supports tag filters, and groups the full overview by each server's first (primary) tag. An **Untagged** group keeps new servers visible. Tags can be edited or deleted without changing the remote hosts or their SSH credentials. Tag names and colors are stored locally in the same persistent application volume.
-
-## Versioned Docker images (planned first beta)
-
-`compose.dev.yaml` is the development Compose file and builds directly from source. Both the default `compose.yaml` and `compose.release.yaml` pull a ready-to-run image from `ghcr.io/ttavares369/contscope`. The release pipeline in `.github/workflows/publish.yml` publishes **linux/amd64** and **linux/arm64** automatically on updates to `main` with tag `beta`, and also on `v*` release tags belonging to `main`. The release tag is baked into the About panel together with its Git SHA and UTC build date. The release Compose pins a version rather than following `latest`, to avoid surprise upgrades. The default `beta` image becomes available once the publishing workflow on `main` succeeds and the GHCR package is public.
-
-After the image exists, download the versioned release Compose file as `compose.yaml` and run `docker compose up` to see the first-run admin credentials. Use the `CONTSCOPE_IMAGE_TAG` variable to select a released version. The port binds to loopback by default. For access from other computers, configure an HTTPS reverse proxy; do not expose the basic-auth UI over cleartext HTTP. Always back up the persistent volume (both credentials and the locally generated encryption key are stored there). No remote host needs the ContScope agent installed.
-
-## Change the admin password
-
-Select **Change password** in the ContScope dashboard. Enter the current password, a new password of 14–256 characters, and confirmation. A successful change immediately invalidates the previous password for new HTTP requests; your browser may retain HTTP Basic authentication credentials until its tab or browser session is closed. Passwords are never logged or returned by the API. The password change is only available for the automatically managed admin account. When `CONTSCOPE_USER` and `CONTSCOPE_PASSWORD` environment overrides are used, change the values in the deployment environment instead. The emergency CLI command `docker compose exec contscope /usr/local/bin/contscope reset-admin` remains available for local account recovery.
-
-## Troubleshooting the Add Server flow
-
-Choose **Username and password** (the default), or switch to an SSH private key. Enter server name, IP/hostname, port, username and credentials. Click **Test SSH connection**; on first use it will guide you through host fingerprint discovery. Compare a SHA256 fingerprint with a trusted source, select the matching key, then click **Test SSH connection** again. After a successful test, **Save server** becomes available. Errors are displayed below the form instead of failing silently. The server administrator must allow the chosen SSH authentication method. DNS and SSH access originate from the ContScope container, not directly from the browser.
-
-If a browser cannot open the local panel while another can, investigate browser proxy settings, DNS-over-HTTPS and HTTP/HTTPS upgrades. Test `http://127.0.0.1:8080` directly and consider adding `localhost, 127.0.0.1` to the browser's proxy bypass list. These settings are browser-specific and are not fixed by reinstalling the container.
-
-## Quick server setup (Beta)
-
-Open **Add server**, enter a name, host/IP, SSH username and password, then click **Connect & add server**. Optionally change the authentication method to a private key or expand Advanced options to change the SSH port (default 22). The dashboard handles SSH host-key discovery, tests login and securely saves credentials in one operation. SSH fingerprints are automatically **trusted on first use** and pinned: connections fail closed if the host key later changes. This is convenient for personal use but it does not protect the very first connection from a man-in-the-middle attack. For environments with stronger security requirements, verify the host's fingerprint independently with your provider's console before using this workflow.
+For professional Linux/Docker assistance, contact [Jupiter TI](https://www.jupiterti.com/servicos) or [tiago@jupiterti.com](mailto:tiago@jupiterti.com). Prepare an optional report from About / Help, inspect and edit it, then export JSON and share it yourself. Automated redaction is best effort. ContScope never sends the report automatically.

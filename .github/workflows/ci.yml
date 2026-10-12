@@ -3,6 +3,8 @@ on:
   push:
     branches: [main, "feat/**"]
   pull_request:
+permissions:
+  contents: read
 jobs:
   go:
     runs-on: ubuntu-latest
@@ -12,34 +14,71 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Go format
-        run: gofmt -l .
+        run: test -z "$(gofmt -l .)"
       - name: Browser JavaScript syntax
-        run: |
-          python3 -c "from pathlib import Path; s=Path('main.go').read_text(); Path('/tmp/contscope-ui.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0])"
-          node --check /tmp/contscope-ui.js
+        run: node --check web/app.js
       - name: Go vet
         run: go vet ./...
-      - name: Unit tests
+      - name: Unit and API tests
         run: go test -race ./...
-      - name: Compile
-        run: go build ./...
-      - name: Local dashboard HTTP smoke test
+      - name: Compile both architectures
         run: |
-          CONTSCOPE_USER=smoke CONTSCOPE_PASSWORD=very-long-smoke-test-password CONTSCOPE_DATA="$RUNNER_TEMP/contscope/servers.json" CONTSCOPE_ADDR=127.0.0.1:18765 go run . > "$RUNNER_TEMP/contscope-app.log" 2>&1 &
-          app_pid=$!
-          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
-          for i in $(seq 1 40); do
-            if curl --silent --fail --user smoke:very-long-smoke-test-password http://127.0.0.1:18765/api/about > "$RUNNER_TEMP/about.json"; then break; fi
-            sleep 1
-          done
-          python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); assert v["license"]=="Apache-2.0"' "$RUNNER_TEMP/about.json"
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18765/api/servers)" = 401
-          curl --fail --silent --user smoke:very-long-smoke-test-password http://127.0.0.1:18765/ | grep -q 'Organize servers with colors'
-          curl --fail --silent http://127.0.0.1:18765/assets/contscope-mark.svg | grep -q '<svg'
-          curl --fail --silent --user smoke:very-long-smoke-test-password http://127.0.0.1:18765/api/tags | grep -q '\[\]'
+          CGO_ENABLED=0 GOARCH=amd64 go build -o /tmp/contscope-amd64 .
+          CGO_ENABLED=0 GOARCH=arm64 go build -o /tmp/contscope-arm64 .
+      - name: Install OpenSSH fixture
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          tests/ssh-fixture.sh
+      - name: Real SSH and Docker integration
+        run: go test -race -run TestOpenSSHIntegration -v .
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser test dependencies
+        run: |
+          npm install --no-save --no-package-lock playwright@1.51.1
+          npx playwright install --with-deps chromium
+      - name: Build test application
+        run: go build -o /tmp/contscope-app .
+      - name: Browser flows and responsive layouts
+        run: node tests/browser.cjs
+      - name: Upload dashboard screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-screenshots
+          path: test-results/
   container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build Docker image
-        run: docker build -t contscope:test .
+      - name: Build Docker image and check persistence
+        run: |
+          docker build -t contscope:test .
+          docker volume create contscope-ci-data
+          docker run -d --name contscope-ci -p 127.0.0.1:18765:8080 -v contscope-ci-data:/data contscope:test
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://127.0.0.1:18765/; then break; fi
+            sleep 1
+          done
+          initial_password=$(docker logs contscope-ci 2>&1 | sed -n 's/^  Password:  //p' | head -n 1)
+          test -n "$initial_password"
+          curl --fail --silent --user "admin:$initial_password" -H 'Content-Type: application/json' -d '{"name":"Persistent tag","color":"blue"}' http://127.0.0.1:18765/api/tags
+          docker restart contscope-ci
+          sleep 2
+          curl --fail --silent --user "admin:$initial_password" http://127.0.0.1:18765/api/tags | grep -q 'Persistent tag'
+          docker exec contscope-ci test -f /data/admin-auth.json
+          docker exec contscope-ci test -f /data/local-secret.key
+          docker exec contscope-ci test -f /data/server-tags.json
+          reset_output=$(docker exec contscope-ci /usr/local/bin/contscope reset-admin)
+          reset_password=$(printf '%s\n' "$reset_output" | sed -n 's/^New password: //p')
+          test -n "$reset_password"
+          curl --fail --silent --user "admin:$reset_password" http://127.0.0.1:18765/api/about > /dev/null

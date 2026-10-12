@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
- "errors"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,14 +21,14 @@ import (
 )
 
 type LogAlert struct {
-	ID            string    `json:"id"`
-	ServerID      string    `json:"serverId"`
-	ServerName    string    `json:"serverName"`
-	ContainerID   string    `json:"containerId"`
-	ContainerName string    `json:"containerName"`
-	Message       string    `json:"message"`
- Guidance      LogGuidance `json:"guidance"`
-	At            time.Time `json:"at"`
+	ID            string      `json:"id"`
+	ServerID      string      `json:"serverId"`
+	ServerName    string      `json:"serverName"`
+	ContainerID   string      `json:"containerId"`
+	ContainerName string      `json:"containerName"`
+	Message       string      `json:"message"`
+	Guidance      LogGuidance `json:"guidance"`
+	At            time.Time   `json:"at"`
 }
 
 type LogMonitor struct {
@@ -44,6 +44,7 @@ var logMonitor = &LogMonitor{
 	errors: map[string]string{}, coverage: map[string]string{},
 }
 
+var legacyKnownHosts = "/home/contscope/.ssh/known_hosts"
 var containerIDRe = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
 
 type cappedWriter struct {
@@ -54,6 +55,9 @@ type cappedWriter struct {
 
 func (c *cappedWriter) Write(p []byte) (int, error) {
 	n := len(p)
+	if n > c.max-c.buf.Len() {
+		c.truncated = true
+	}
 	if c.buf.Len() < c.max {
 		limit := c.max - c.buf.Len()
 		if limit > n {
@@ -61,20 +65,24 @@ func (c *cappedWriter) Write(p []byte) (int, error) {
 		}
 		_, _ = c.buf.Write(p[:limit])
 	}
-	if c.buf.Len() >= c.max {
-		c.truncated = true
-	}
 	return n, nil
 }
 
 // runSSHScript passes the script only via stdin and never interpolates user fields into a remote shell.
 func runSSHScript(s Server, script string, timeout time.Duration, maxOutput int) (string, bool, error) {
- if s.AuthMethod!="" {secret,err:=managedSecret(s.ID);if err!=nil{return "",false,errors.New("SSH credential unavailable")};output,err:=runSSHAuthenticated(s,secret,script,timeout,maxOutput);return output,false,err}
+	if s.AuthMethod != "" {
+		secret, err := managedSecret(s.ID)
+		if err != nil {
+			return "", false, errors.New("SSH credential unavailable")
+		}
+		output, err := runSSHAuthenticated(s, secret, script, timeout, maxOutput)
+		return output, false, err
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	args := []string{"-F", "/dev/null", "-o", "BatchMode=yes",
 		"-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes",
-		"-o", "UserKnownHostsFile=/home/contscope/.ssh/known_hosts",
+		"-o", "UserKnownHostsFile=" + legacyKnownHosts,
 		"-o", "IdentitiesOnly=yes", "-o", "ClearAllForwardings=yes",
 		"-o", "PermitLocalCommand=no", "-o", "ControlMaster=no",
 		"-o", "RequestTTY=no", "-p", strconv.Itoa(s.Port),
@@ -90,7 +98,7 @@ func runSSHScript(s Server, script string, timeout time.Duration, maxOutput int)
 		return "", false, fmt.Errorf("SSH request timed out")
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("SSH unavailable or command failed: %s", strings.TrimSpace(errOut.buf.String()))
+		return "", false, sshFailure(errOut.buf.String())
 	}
 	return out.buf.String(), out.truncated, nil
 }
@@ -183,7 +191,7 @@ func (m *LogMonitor) scanServer(s Server) {
 		return // Keep the cursor: do not mark a failed scan as successful.
 	}
 	m.mu.Lock()
- newlyFound:=[]LogAlert{}
+	newlyFound := []LogAlert{}
 	m.errors[s.ID] = ""
 	m.coverage[s.ID] = fmt.Sprintf("%d / %d running containers scanned", result.scanned, result.total)
 	seen := make(map[string]bool, len(m.alerts))
@@ -193,7 +201,7 @@ func (m *LogMonitor) scanServer(s Server) {
 	for _, a := range result.alerts {
 		if !seen[a.ID] {
 			m.alerts = append(m.alerts, a)
-            newlyFound=append(newlyFound,a)
+			newlyFound = append(newlyFound, a)
 			seen[a.ID] = true
 		}
 	}
@@ -203,7 +211,7 @@ func (m *LogMonitor) scanServer(s Server) {
 	// Cursor is anchored to scan START, not completion, to avoid missing lines.
 	m.cursors[s.ID] = now
 	m.mu.Unlock()
- m.notifyTelegramAlerts(newlyFound)
+	m.notifyTelegramAlerts(newlyFound)
 }
 
 func logScanScript(since time.Time) string {
@@ -272,7 +280,11 @@ func parseLogScan(s Server, data string) scanResult {
 	return result
 }
 
-func (m *LogMonitor) serveAlerts(w http.ResponseWriter, _ *http.Request) {
+func (m *LogMonitor) serveAlerts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	jsonResponse(w, http.StatusOK, map[string]any{
@@ -282,6 +294,10 @@ func (m *LogMonitor) serveAlerts(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (m *LogMonitor) serveLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(405)
+		return
+	}
 	id := r.URL.Query().Get("server")
 	container := r.URL.Query().Get("container")
 	if !safe.MatchString(id) || !containerIDRe.MatchString(container) {

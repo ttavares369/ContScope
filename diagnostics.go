@@ -11,10 +11,10 @@ import (
 )
 
 type DiagnosticResponse struct {
-	Kind       string              `json:"kind"`
-	Rows       []map[string]string `json:"rows"`
-	Notice     string              `json:"notice,omitempty"`
-	Collected  time.Time           `json:"collected"`
+	Kind      string              `json:"kind"`
+	Rows      []map[string]string `json:"rows"`
+	Notice    string              `json:"notice,omitempty"`
+	Collected time.Time           `json:"collected"`
 }
 
 func serverForID(id string) (Server, bool) {
@@ -72,14 +72,14 @@ func serveDiagnostics(w http.ResponseWriter, r *http.Request) {
 func diagnosticScript(view string, container string) (string, time.Duration, int, error) {
 	switch view {
 	case "processes":
-		return "LC_ALL=C ps -eo pid=,comm=,%cpu=,%mem=,rss= --sort=-%cpu | head -n 25\n", 12*time.Second, 12*1024, nil
+		return "LC_ALL=C ps -eo pid=,comm=,%cpu=,%mem=,rss= --sort=-%cpu | head -n 25\n", 12 * time.Second, 12 * 1024, nil
 	case "storage":
 		return `set -u
 df -hP 2>/dev/null | awk 'NR>1 && NR<=30 {printf "DISK|%s|%s|%s|%s|%s|%s\n",$1,$2,$3,$4,$5,$6}'
 if command -v docker >/dev/null 2>&1; then
 docker system df --format '{{json .}}' 2>/dev/null | head -n 12 | while IFS= read -r line; do printf 'DOCKER|%s\n' "$line"; done
 fi
-`, 20*time.Second, 32*1024, nil
+`, 20 * time.Second, 32 * 1024, nil
 	case "network":
 		return `set -u
 before="$(awk 'NR>2 {gsub(/:/,"",$1); if ($1!="lo") print $1,$2,$10}' /proc/net/dev)"
@@ -92,20 +92,20 @@ if command -v ss >/dev/null 2>&1; then
   ss -Htn state established 2>/dev/null | awk '{print $5}' | sort | uniq -c | sort -nr | head -n 12 |
   while read -r count peer; do printf 'PEER|%s|%s\n' "$peer" "$count"; done
 fi
-`, 12*time.Second, 20*1024, nil
+`, 12 * time.Second, 20 * 1024, nil
 	case "events":
 		since := strconv.FormatInt(time.Now().Add(-30*time.Minute).Unix(), 10)
 		until := strconv.FormatInt(time.Now().Unix(), 10)
 		return "if command -v docker >/dev/null 2>&1; then docker events --since " + since + " --until " + until +
-			" --format '{{json .}}' 2>/dev/null | tail -n 60 | while IFS= read -r line; do printf 'EVENT|%s\\n' \"$line\"; done; fi\n",
-			18*time.Second, 48*1024, nil
+				" --format '{{json .}}' 2>/dev/null | tail -n 60 | while IFS= read -r line; do printf 'EVENT|%s\\n' \"$line\"; done; fi\n",
+			18 * time.Second, 48 * 1024, nil
 	case "container":
 		if !containerIDRe.MatchString(container) {
 			return "", 0, 0, fmt.Errorf("invalid container ID")
 		}
 		// Deliberately excludes .Config.Env and full .State.Health.Log, which may contain secrets.
 		return "docker container inspect --format 'INSPECT|{{.Name}}|{{.Config.Image}}|{{.State.Status}}|{{.RestartCount}}|{{.State.StartedAt}}|{{.HostConfig.RestartPolicy.Name}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}not-configured{{end}}' " +
-			container + "\n", 12*time.Second, 8*1024, nil
+			container + "\n", 12 * time.Second, 8 * 1024, nil
 	default:
 		return "", 0, 0, fmt.Errorf("unsupported diagnostic view")
 	}
@@ -136,10 +136,10 @@ func parseDiagnostics(kind, data string) DiagnosticResponse {
 			}
 			if strings.HasPrefix(line, "DOCKER|") {
 				var row struct {
-					Type string
-					TotalCount string
-					Active string
-					Size string
+					Type        string
+					TotalCount  string
+					Active      string
+					Size        string
 					Reclaimable string
 				}
 				if json.Unmarshal([]byte(strings.TrimPrefix(line, "DOCKER|")), &row) == nil {
@@ -162,13 +162,15 @@ func parseDiagnostics(kind, data string) DiagnosticResponse {
 				})
 			}
 		case "events":
-			if !strings.HasPrefix(line, "EVENT|") { continue }
+			if !strings.HasPrefix(line, "EVENT|") {
+				continue
+			}
 			var row struct {
-				Type string
+				Type   string
 				Action string
-				Time int64
-				Actor struct {
-					ID string
+				Time   int64
+				Actor  struct {
+					ID         string
 					Attributes map[string]string
 				}
 			}
@@ -176,11 +178,13 @@ func parseDiagnostics(kind, data string) DiagnosticResponse {
 				name := row.Actor.Attributes["name"]
 				if name == "" {
 					name = row.Actor.ID
-					if len(name) > 12 { name = name[:12] }
+					if len(name) > 12 {
+						name = name[:12]
+					}
 				}
 				result.Rows = append(result.Rows, map[string]string{
 					"type": row.Type, "action": row.Action, "name": name,
-					"time": time.Unix(row.Time,0).UTC().Format(time.RFC3339),
+					"time": time.Unix(row.Time, 0).UTC().Format(time.RFC3339),
 				})
 			}
 		case "container":
@@ -192,7 +196,9 @@ func parseDiagnostics(kind, data string) DiagnosticResponse {
 				})
 			}
 		}
-		if len(result.Rows) >= 80 { break }
+		if len(result.Rows) >= 80 {
+			break
+		}
 	}
 	return result
 }
