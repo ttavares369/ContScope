@@ -82,16 +82,15 @@ fi
 `, 20*time.Second, 32*1024, nil
 	case "network":
 		return `set -u
-awk 'NR>2 {gsub(/:/,"",$1); if ($1!="lo") print $1,$2,$10}' /proc/net/dev > /tmp/contscope-net-$$.1
+before="$(awk 'NR>2 {gsub(/:/,"",$1); if ($1!="lo") print $1,$2,$10}' /proc/net/dev)"
 sleep 1
-awk 'NR>2 {gsub(/:/,"",$1); if ($1!="lo") print $1,$2,$10}' /proc/net/dev |
-while read -r iface rx tx; do
-  awk -v iface="$iface" -v rx="$rx" -v tx="$tx" '$1==iface {printf "IFACE|%s|%.0f|%.0f\n",iface,rx-$2,tx-$3}' /tmp/contscope-net-$$.1
+printf '%s\\n' "$before" | awk 'NF==3' |
+while read -r iface rx1 tx1; do
+  awk -v name="$iface" -v r="$rx1" -v t="$tx1" 'NR>2 {gsub(/:/,"",$1);if ($1==name) printf "IFACE|%s|%.0f|%.0f\\n",name,$2-r,$10-t}' /proc/net/dev
 done
-rm -f /tmp/contscope-net-$$.1
 if command -v ss >/dev/null 2>&1; then
   ss -Htn state established 2>/dev/null | awk '{print $5}' | sort | uniq -c | sort -nr | head -n 12 |
-  while read -r count peer; do printf 'PEER|%s|%s\n' "$peer" "$count"; done
+  while read -r count peer; do printf 'PEER|%s|%s\\n' "$peer" "$count"; done
 fi
 `, 12*time.Second, 20*1024, nil
 	case "events":
