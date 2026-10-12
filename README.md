@@ -98,7 +98,7 @@ The project welcomes voluntary support, but no payment provider or sponsorship U
 
 The ContScope header and favicon use a compact container-and-target SVG mark inspired by the selected brand concept; the full vector logo is included at `assets/contscope-logo.svg`. The **About** dialog shows the version, commit hash, build date, Apache 2.0 license, GitHub repository, optional donation status and professional support contact. Donation buttons will be activated only after a real funding destination is configured.
 
-Image releases can embed build data with `docker build --build-arg VERSION=v0.1.0-beta.1 --build-arg VCS_REF=$(git rev-parse --short HEAD) --build-arg BUILD_DATE=$(date -u +%FT%TZ) .`. Development builds show `dev` / `unknown` rather than claiming a published release.
+Image releases can embed build data with `docker build --build-arg VERSION=beta --build-arg VCS_REF=$(git rev-parse --short HEAD) --build-arg BUILD_DATE=$(date -u +%FT%TZ) .`. Development builds show `dev` / `unknown` rather than claiming a published release.
 
 ## SSH onboarding security boundaries
 
@@ -114,7 +114,7 @@ Use **Organize servers with colors** to create reusable color-coded tags such as
 
 ## Versioned Docker images (planned first beta)
 
-`compose.dev.yaml` is the development Compose file and builds directly from source. Both the default `compose.yaml` and `compose.release.yaml` pull a ready-to-run image from `ghcr.io/ttavares369/contscope`. The release pipeline in `.github/workflows/publish.yml` publishes **linux/amd64** and **linux/arm64** on a `v*` tag **only when the tagged commit belongs to `main`**. The release tag is baked into the About panel together with its Git SHA and UTC build date. The release Compose pins a version rather than following `latest`, to avoid surprise upgrades. A tagged beta image is **not available until the corresponding tag is created, the workflow succeeds and the GHCR package is public**.
+`compose.dev.yaml` is the development Compose file and builds directly from source. Both the default `compose.yaml` and `compose.release.yaml` pull a ready-to-run image from `ghcr.io/ttavares369/contscope`. The release pipeline in `.github/workflows/publish.yml` publishes **linux/amd64** and **linux/arm64** automatically on updates to `main` with tag `beta`, and also on `v*` release tags belonging to `main`. The release tag is baked into the About panel together with its Git SHA and UTC build date. The release Compose pins a version rather than following `latest`, to avoid surprise upgrades. The default `beta` image becomes available once the publishing workflow on `main` succeeds and the GHCR package is public.
 
 After the image exists, download the versioned release Compose file as `compose.yaml` and run `docker compose up` to see the first-run admin credentials. Use the `CONTSCOPE_IMAGE_TAG` variable to select a released version. The port binds to loopback by default. For access from other computers, configure an HTTPS reverse proxy; do not expose the basic-auth UI over cleartext HTTP. Always back up the persistent volume (both credentials and the locally generated encryption key are stored there). No remote host needs the ContScope agent installed.
 
