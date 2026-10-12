@@ -1,0 +1,19 @@
+services:
+  contscope:
+    build: .
+    restart: unless-stopped
+    environment:
+      CONTSCOPE_USER: ${CONTSCOPE_USER:?Set in .env}
+      CONTSCOPE_PASSWORD: ${CONTSCOPE_PASSWORD:?Set in .env}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - contscope_data:/data
+      - ./ssh:/home/contscope/.ssh:ro
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+volumes:
+  contscope_data:
