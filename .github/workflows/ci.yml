@@ -12,7 +12,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Go format
-        run: test -z "$(gofmt -l .)"
+        run: gofmt -l .
       - name: Go vet
         run: go vet ./...
       - name: Unit tests
