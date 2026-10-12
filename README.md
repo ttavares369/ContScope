@@ -39,7 +39,7 @@ For detached installations, use `docker compose up -d` followed by `docker compo
 docker compose exec contscope /usr/local/bin/contscope reset-admin
 ```
 
-The admin verification data, encrypted SSH credentials, tags and the automatically generated encryption key remain in the persistent Docker volume. Back up this volume securely. To build from source instead of pulling a registry image, use the development compose file available in the repository as `compose.dev.yaml`.
+The admin verification data, encrypted SSH credentials, tags and the automatically generated encryption key remain in the persistent Docker volume. Back up this volume securely. To build from source instead of pulling a registry image, run `docker compose -f compose.dev.yaml up --build`.
 
 After login, choose **Add server**, enter the SSH host, port and username, then select a password or upload a private key. Independently confirm the remote SSH host fingerprint, test the connection and save.
 
@@ -114,6 +114,6 @@ Use **Organize servers with colors** to create reusable color-coded tags such as
 
 ## Versioned Docker images (planned first beta)
 
-`compose.yaml` is the development Compose file and builds directly from source. `compose.release.yaml` pulls a ready-to-run image from `ghcr.io/ttavares369/contscope`. The release pipeline in `.github/workflows/publish.yml` publishes **linux/amd64** and **linux/arm64** on a `v*` tag **only when the tagged commit belongs to `main`**. The release tag is baked into the About panel together with its Git SHA and UTC build date. The release Compose pins a version rather than following `latest`, to avoid surprise upgrades. A tagged beta image is **not available until the corresponding tag is created, the workflow succeeds and the GHCR package is public**.
+`compose.dev.yaml` is the development Compose file and builds directly from source. Both the default `compose.yaml` and `compose.release.yaml` pull a ready-to-run image from `ghcr.io/ttavares369/contscope`. The release pipeline in `.github/workflows/publish.yml` publishes **linux/amd64** and **linux/arm64** on a `v*` tag **only when the tagged commit belongs to `main`**. The release tag is baked into the About panel together with its Git SHA and UTC build date. The release Compose pins a version rather than following `latest`, to avoid surprise upgrades. A tagged beta image is **not available until the corresponding tag is created, the workflow succeeds and the GHCR package is public**.
 
 After the image exists, download the versioned release Compose file as `compose.yaml` and run `docker compose up` to see the first-run admin credentials. Use the `CONTSCOPE_IMAGE_TAG` variable to select a released version. The port binds to loopback by default. For access from other computers, configure an HTTPS reverse proxy; do not expose the basic-auth UI over cleartext HTTP. Always back up the persistent volume (both credentials and the locally generated encryption key are stored there). No remote host needs the ContScope agent installed.
