@@ -2,6 +2,7 @@ package main
 
 import (
  "encoding/base64"
+ "bytes"
  "encoding/hex"
  "os"
  "path/filepath"
@@ -12,7 +13,7 @@ import (
 
 func setTestMasterKey(t *testing.T) {
  t.Helper()
- t.Setenv("CONTSCOPE_MASTER_KEY",strings.Repeat("a",64))
+ old:=storePath;storePath=filepath.Join(t.TempDir(),"servers.json");t.Cleanup(func(){storePath=old})
 }
 func TestManagedCredentialsRoundtrip(t *testing.T){
  setTestMasterKey(t)
@@ -30,9 +31,11 @@ func TestManagedCredentialsRoundtrip(t *testing.T){
  if err:=deleteManagedSecret("server-1");err!=nil{t.Fatal(err)}
  if _,err:=managedSecret("server-1");err==nil{t.Fatal("deleted secret should be unavailable")}
 }
-func TestMasterKeyRequired(t *testing.T){
- t.Setenv("CONTSCOPE_MASTER_KEY","short")
- if _,err:=masterKey();err==nil{t.Fatal("short key accepted")}
+func TestMasterKeyGeneratedLocally(t *testing.T){
+ setTestMasterKey(t)
+ first,err:=masterKey();if err!=nil||len(first)!=32{t.Fatalf("key creation failed: %v",err)}
+ again,err:=masterKey();if err!=nil||!bytes.Equal(first,again){t.Fatal("local key changed unexpectedly")}
+ info,err:=os.Stat(localKeyPath());if err!=nil||info.Mode().Perm()!=0600{t.Fatal("key file permissions invalid")}
 }
 func TestVerifiedFingerprintAndTicket(t *testing.T){
  setTestMasterKey(t)
