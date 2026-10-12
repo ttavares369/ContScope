@@ -116,7 +116,7 @@ func startupMessage(generatedPassword string,newAccount bool) {
  fmt.Println("  ContScope | Docker & Server Monitoring")
  fmt.Println("==========================================================")
  fmt.Println("  Dashboard: http://localhost:8080")
- fmt.Println("  Username:  admin")
+ if user:=os.Getenv("CONTSCOPE_USER");user!="" {fmt.Println("  Username:  "+user)}else{fmt.Println("  Username:  admin")}
  if newAccount {
   fmt.Println("  Password:  "+generatedPassword)
   fmt.Println("  IMPORTANT: Save this password. It is shown only once.")
