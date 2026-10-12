@@ -52,6 +52,12 @@ go run .
 
 MIT.
 
+## Progressive troubleshooting
+
+The home view emphasizes a short set of prioritized findings (CPU over 90%, memory over 90%, root disk over 85%, unhealthy/restarting containers, SSH and Docker data availability). Each finding includes its observed evidence and a suggested **read-only** next diagnostic; no automatic corrective actions are taken. Warnings are heuristics and are not proof of root cause. Stopped containers are not automatically labeled broken because they may be intentional jobs. Deep diagnostics are loaded only on demand and initially show a short, expandable list; users request further detail themselves.
+
+This early implementation does not yet predict future failures or guarantee proactive alerts when the local machine is powered off. Trends, configured thresholds, alert acknowledgment and contextual container-log drill-down remain future work.
+
 ## Lightweight architecture
 
 One statically compiled Go backend serves the web UI and handles SSH sessions. It has no Prometheus, Grafana, external database, Node.js runtime, or permanent remote collector. Advanced diagnostics are requested explicitly and constrained with fixed read-only scripts, timeouts, and output limits. Network peer summaries may contain remote IP addresses; Docker logs may contain sensitive information, so limit UI access to trusted users. 
