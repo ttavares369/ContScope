@@ -3,7 +3,6 @@ package main
 import (
  "context"
  "embed"
- "crypto/subtle"
  "encoding/json"
  "errors"
  "fmt"
