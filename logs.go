@@ -183,6 +183,7 @@ func (m *LogMonitor) scanServer(s Server) {
 		return // Keep the cursor: do not mark a failed scan as successful.
 	}
 	m.mu.Lock()
+ newlyFound:=[]LogAlert{}
 	m.errors[s.ID] = ""
 	m.coverage[s.ID] = fmt.Sprintf("%d / %d running containers scanned", result.scanned, result.total)
 	seen := make(map[string]bool, len(m.alerts))
@@ -192,6 +193,7 @@ func (m *LogMonitor) scanServer(s Server) {
 	for _, a := range result.alerts {
 		if !seen[a.ID] {
 			m.alerts = append(m.alerts, a)
+            newlyFound=append(newlyFound,a)
 			seen[a.ID] = true
 		}
 	}
@@ -201,6 +203,7 @@ func (m *LogMonitor) scanServer(s Server) {
 	// Cursor is anchored to scan START, not completion, to avoid missing lines.
 	m.cursors[s.ID] = now
 	m.mu.Unlock()
+ m.notifyTelegramAlerts(newlyFound)
 }
 
 func logScanScript(since time.Time) string {
