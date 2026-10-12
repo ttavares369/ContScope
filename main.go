@@ -85,7 +85,7 @@ func main(){
  http.HandleFunc("/api/labels",auth(serveLabels))
  http.HandleFunc("/api/support/report",auth(serveSupportReport))
  http.HandleFunc("/api/about",auth(func(w http.ResponseWriter,r *http.Request){if r.Method!="GET"{w.WriteHeader(405);return};jsonResponse(w,200,map[string]string{"version":version,"commit":commit,"buildDate":buildDate,"license":"Apache-2.0","repository":"https://github.com/ttavares369/ContScope","supportEmail":"tiago@jupiterti.com"})}))
- http.HandleFunc("/assets/",http.FileServer(http.FS(logoFiles)))
+ http.Handle("/assets/",http.FileServer(http.FS(logoFiles)))
  http.HandleFunc("/api/diagnostics",auth(serveDiagnostics))
  http.HandleFunc("/api/logs",auth(logMonitor.serveLogs))
  storePath=os.Getenv("CONTSCOPE_DATA");if storePath==""{storePath="./servers.json"}
