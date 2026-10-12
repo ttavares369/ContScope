@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="dark"><title>ContScope · Infrastructure at a glance</title><link rel="icon" href="/assets/contscope-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="/web/app.css"><script src="/web/app.js" defer></script></head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+ <aside id="sidebar" class="sidebar" aria-label="Main navigation">
+  <a class="brand" href="#overview"><img src="/assets/contscope-mark.svg" alt="" width="36" height="36"><span>ContScope<small>INFRASTRUCTURE MONITOR</small></span></a>
+  <div class="nav-label">WORKSPACE</div>
+  <nav id="navigation">
+   <a href="#overview" data-page="overview"><span class="nav-icon">◫</span><span>Overview</span></a>
+   <a href="#servers" data-page="servers"><span class="nav-icon">▤</span><span>Servers</span><span id="serverCount" class="nav-count">0</span></a>
+   <a href="#containers" data-page="containers"><span class="nav-icon">◇</span><span>Containers</span></a>
+   <a href="#alerts" data-page="alerts"><span class="nav-icon">△</span><span>Alerts</span><span id="alertCount" class="nav-count">0</span></a>
+   <a href="#tags" data-page="tags"><span class="nav-icon">⌑</span><span>Tags &amp; Groups</span></a>
+   <a href="#diagnostics" data-page="diagnostics"><span class="nav-icon">⌁</span><span>Diagnostics</span></a>
+   <div class="nav-label">PREFERENCES</div>
+   <a href="#settings" data-page="settings"><span class="nav-icon">⚙</span><span>Settings</span></a>
+   <a href="#about" data-page="about" id="openAbout"><span class="nav-icon">ⓘ</span><span>About / Help</span></a>
+  </nav>
+  <div class="sidebar-bottom"><div class="read-only"><span class="dot good"></span><span>Read-only monitoring</span></div><p>Agentless. Lightweight. Yours.</p><button id="collapseNav" class="quiet" aria-label="Collapse sidebar">⇤ <span>Collapse sidebar</span></button></div>
+ </aside>
+ <button id="navBackdrop" class="nav-backdrop" aria-label="Close navigation" hidden></button>
+ <div class="workspace">
+  <header class="topbar"><div class="topbar-left"><button id="mobileNav" class="icon-button" aria-controls="sidebar" aria-expanded="false" aria-label="Open navigation">☰</button><span class="breadcrumb">Workspace <span>/</span> <b id="breadcrumb">Overview</b></span></div><div class="topbar-right"><span class="refresh-note"><span class="dot good"></span> Auto-refresh · 30s</span><button id="refresh" class="quiet">↻ <span>Refresh</span></button><span class="avatar" title="Administrator">A</span></div></header>
+  <main id="main" tabindex="-1"><div id="globalError" class="notice danger" role="alert" hidden></div><div id="content" aria-live="polite"><div class="empty"><div class="loader"></div><h2>Loading your workspace</h2><p>Reading server and tag settings…</p></div></div></main>
+  <footer><span>ContScope <span id="footerVersion">· Open source</span></span><span id="updated">Waiting for first snapshot</span></footer>
+ </div>
+</div>
+<dialog id="modal" aria-labelledby="modalTitle"><div class="modal-head"><div><p class="eyebrow" id="modalEyebrow">WORKSPACE</p><h2 id="modalTitle"></h2></div><button id="closeModal" class="icon-button" aria-label="Close dialog">×</button></div><div id="modalBody"></div></dialog>
+<div id="toast" class="toast" role="status" hidden></div>
+</body></html>

@@ -3,3 +3,7 @@ ssh/
 *.db
 .idea/
 .DS_Store
+
+/test-results/
+/node_modules/
+/contscope

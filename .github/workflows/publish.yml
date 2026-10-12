@@ -34,9 +34,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Browser JavaScript syntax
-        run: |
-          python3 -c "from pathlib import Path; s=Path('main.go').read_text(); Path('/tmp/contscope-ui.js').write_text(s.split('<script>',1)[1].split('</script>',1)[0])"
-          node --check /tmp/contscope-ui.js
+        run: node --check web/app.js
       - name: Static analysis
         run: go vet ./...
       - name: Unit tests
