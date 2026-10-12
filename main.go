@@ -20,7 +20,7 @@ import (
  "time"
 )
 
-type Server struct { ID string `json:"id"`; Name string `json:"name"`; Host string `json:"host"`; Port int `json:"port"`; User string `json:"user"`; Key string `json:"key"` }
+type Server struct { ID string `json:"id"`; Name string `json:"name"`; Host string `json:"host"`; Port int `json:"port"`; User string `json:"user"`; Key string `json:"key,omitempty"`; AuthMethod string `json:"authMethod,omitempty"`; HostKey string `json:"hostKey,omitempty"` }
 type Container struct { ID string `json:"id"`; Names string `json:"name"`; Status string `json:"status"`; State string `json:"state"`; RestartCount int `json:"restarts"`; CPU string `json:"cpu"`; Memory string `json:"memory"`; NetIO string `json:"netIO"` }
 type Snapshot struct { Server Server `json:"server"`; Online bool `json:"online"`; Error string `json:"error,omitempty"`; Uptime string `json:"uptime"`; Load string `json:"load"`; MemoryUsed uint64 `json:"memoryUsed"`; MemoryTotal uint64 `json:"memoryTotal"`; DiskUsed uint64 `json:"diskUsed"`; DiskTotal uint64 `json:"diskTotal"`; Network string `json:"network"`; CPUPercent *float64 `json:"cpuPercent,omitempty"`; DockerStatus string `json:"dockerStatus"`; Findings []Finding `json:"findings"`; Containers []Container `json:"containers"`; At time.Time `json:"at"` }
 var safe = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
@@ -58,15 +58,26 @@ docker stats --no-stream --format '{{json .}}' 2>/dev/null | while IFS= read -r 
 fi`
 func collect(s Server) Snapshot {
  x:=Snapshot{Server:s,At:time.Now(),Containers:[]Container{}}
+ if s.AuthMethod!="" {
+  secret,err:=managedSecret(s.ID)
+  if err!=nil {x.Error="SSH credentials unavailable";x.Findings=findingsForSnapshot(x);return x}
+  output,err:=runSSHAuthenticated(s,secret,remote,28*time.Second,2*1024*1024)
+  if err!=nil{x.Error=err.Error();x.Findings=findingsForSnapshot(x);return x}
+  return parseSnapshot(x,output)
+ }
  target:=s.User+"@"+s.Host
  args:=[]string{"-F","/dev/null","-o","BatchMode=yes","-o","ConnectTimeout=5","-o","StrictHostKeyChecking=yes","-o","UserKnownHostsFile=/home/contscope/.ssh/known_hosts","-o","IdentitiesOnly=yes","-o","ClearAllForwardings=yes","-o","PermitLocalCommand=no","-o","ControlMaster=no","-o","RequestTTY=no","-p",strconv.Itoa(s.Port),"-i","/home/contscope/.ssh/"+s.Key,target,"sh -s"}
  ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second);defer cancel()
  cmd:=exec.CommandContext(ctx,"ssh",args...);cmd.Stdin=strings.NewReader(remote)
  var b strings.Builder;cmd.Stdout=&b;var errBuf strings.Builder;cmd.Stderr=&errBuf
- if e:=cmd.Run();e!=nil {if ctx.Err()!=nil{x.Error="SSH collection timed out"}else{x.Error="SSH collection failed: "+strings.TrimSpace(errBuf.String())};x.Findings=findingsForSnapshot(x);return x}
+ if e:=cmd.Run();e!=nil {if ctx.Err()!=nil{x.Error="SSH collection timed out"}else{x.Error="SSH collection failed"};x.Findings=findingsForSnapshot(x);return x}
+ return parseSnapshot(x,b.String())
+}
+func parseSnapshot(x Snapshot,output string) Snapshot {
+
  x.Online=true
  byID:=map[string]int{}
- for _,line:=range strings.Split(b.String(),"\n"){t:=strings.SplitN(line,"|",3);if len(t)<2{continue};switch t[0]{
+ for _,line:=range strings.Split(output,"\n"){t:=strings.SplitN(line,"|",3);if len(t)<2{continue};switch t[0]{
  case "DOCKERSTATUS":x.DockerStatus=t[1]
  case "UPTIME":x.Uptime=t[1]
  case "LOAD":x.Load=t[1]
@@ -92,14 +103,13 @@ func main(){
  if os.Getenv("CONTSCOPE_USER")==""||len(os.Getenv("CONTSCOPE_PASSWORD"))<16{log.Fatal("Set CONTSCOPE_USER and CONTSCOPE_PASSWORD (at least 16 characters)")}
  addr:=os.Getenv("CONTSCOPE_ADDR");if addr==""{addr="127.0.0.1:8080"}
  http.HandleFunc("/",auth(func(w http.ResponseWriter,r *http.Request){if r.URL.Path!="/"||r.Method!="GET"{http.NotFound(w,r);return};w.Header().Set("Content-Type","text/html; charset=utf-8");_ = page.Execute(w,nil)}))
- http.HandleFunc("/api/servers",auth(func(w http.ResponseWriter,r *http.Request){mu.Lock();defer mu.Unlock();servers,e:=load();if e!=nil{jsonResponse(w,500,map[string]string{"error":"Failed to load servers"});return};switch r.Method {
- case "GET":jsonResponse(w,200,servers)
- case "POST":var s Server; r.Body=http.MaxBytesReader(w,r.Body,4096);if json.NewDecoder(r.Body).Decode(&s)!=nil||!valid(s){jsonResponse(w,400,map[string]string{"error":"Invalid server fields"});return};s.ID=strconv.FormatInt(time.Now().UnixNano(),36);for _,old:=range servers{if old.ID==s.ID{s.ID+="_1"}};servers=append(servers,s);if save(servers)!=nil{jsonResponse(w,500,map[string]string{"error":"Failed to save"});return};jsonResponse(w,201,s)
- default:w.WriteHeader(405)}}))
+ http.HandleFunc("/api/servers",auth(serveServers))
+ http.HandleFunc("/api/ssh/host-keys",auth(serveHostPreview))
+ http.HandleFunc("/api/ssh/test",auth(serveServerTest))
  http.HandleFunc("/api/servers/",auth(func(w http.ResponseWriter,r *http.Request){id:=strings.TrimPrefix(r.URL.Path,"/api/servers/");if !safe.MatchString(id){http.NotFound(w,r);return}
  mu.Lock();servers,e:=load();if e!=nil{mu.Unlock();http.Error(w,"Store error",500);return};var found *Server;for i:=range servers{if servers[i].ID==id{v:=servers[i];found=&v;break}}
  if found==nil{mu.Unlock();http.NotFound(w,r);return}
- if r.Method=="DELETE"{out:=[]Server{};for _,s:=range servers{if s.ID!=id{out=append(out,s)}};e=save(out);mu.Unlock();if e!=nil{http.Error(w,"Store error",500);return};w.WriteHeader(204);return};mu.Unlock()
+ if r.Method=="DELETE"{out:=[]Server{};for _,s:=range servers{if s.ID!=id{out=append(out,s)}};e=save(out);if e==nil&&found.AuthMethod!=""{_ =deleteManagedSecret(id)};mu.Unlock();if e!=nil{http.Error(w,"Store error",500);return};w.WriteHeader(204);return};mu.Unlock()
  if r.Method!="GET"{w.WriteHeader(405);return};jsonResponse(w,200,collect(*found))
  }))
  server:= &http.Server{Addr:addr,ReadHeaderTimeout:5*time.Second};fmt.Println("ContScope listening on",addr);log.Fatal(server.ListenAndServe())
