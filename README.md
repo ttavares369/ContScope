@@ -1,5 +1,8 @@
 # ContScope
 
+![ContScope logo](assets/contscope-logo.svg)
+
+
 **Lightweight, self-hosted Docker container and Linux server monitoring over SSH.**
 
 ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It uses SSH to inspect remote servers and Docker containers without installing permanent monitoring agents on the hosts.
@@ -50,7 +53,7 @@ go run .
 
 ## License
 
-MIT.
+Apache License 2.0. Earlier MIT-licensed revisions retain their original license.
 
 ## Progressive troubleshooting
 
@@ -87,3 +90,9 @@ The optional **Get expert help** button opens a local review dialog for email co
 ## Donations
 
 The project welcomes voluntary support, but no payment provider or sponsorship URL has been activated or configured. A GitHub Sponsors link can be added once a valid sponsor account is created. Donation payments are not required for any feature.
+
+## Product identity and About
+
+The ContScope header and favicon use a compact container-and-target SVG mark inspired by the selected brand concept; the full vector logo is included at `assets/contscope-logo.svg`. The **About** dialog shows the version, commit hash, build date, Apache 2.0 license, GitHub repository, optional donation status and professional support contact. Donation buttons will be activated only after a real funding destination is configured.
+
+Image releases can embed build data with `docker build --build-arg VERSION=v0.1.0-beta.1 --build-arg VCS_REF=$(git rev-parse --short HEAD) --build-arg BUILD_DATE=$(date -u +%FT%TZ) .`. Development builds show `dev` / `unknown` rather than claiming a published release.
