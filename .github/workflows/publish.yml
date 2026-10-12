@@ -1,0 +1,66 @@
+name: Publish Docker Image
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Multi-platform image to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require the tag to come from main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" "origin/main" || {
+            echo "Refusing publication: release tag must point to a commit in main." >&2
+            exit 1
+          }
+      - name: Go checks
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Static analysis
+        run: go vet ./...
+      - name: Unit tests
+        run: go test -race ./...
+      - name: Compile
+        run: go build ./...
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/ttavares369/contscope:${{ github.ref_name }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            VCS_REF=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/ttavares369/ContScope
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.version=${{ github.ref_name }}
+          provenance: mode=min
+          sbom: true
