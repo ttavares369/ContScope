@@ -61,9 +61,9 @@ Servers remain registered if monitoring fails. Offline means the SSH collection 
 | Area | Purpose |
 | --- | --- |
 | Overview | Server/container totals, priority findings, compact server cards and recent log alerts |
-| Servers | Search by name/IP, tag/status filters, sorting, cards/list view and server details |
+| Servers | Search by name/IP, tag/status filters, CPU/RAM/disk/network sorting, cards/list view and server details |
 | Server details | Summary, Containers, Logs, Diagnostics and Settings tabs |
-| Containers | All connected-host containers; name/server/status filters; CPU/memory sorting; details and logs |
+| Containers | All connected-host containers; name/server/status filters; CPU/memory/network sorting; details and logs |
 | Alerts | Severity/server/origin filters, observed evidence, suggested checks and log scan coverage |
 | Tags & Groups | Create, rename, recolor, delete and assign reusable tags |
 | Diagnostics | Request processes, storage, network and recent Docker events explicitly |
@@ -92,9 +92,11 @@ Friendly names and descriptions are local metadata linked to the server and orig
 
 **Logs** retrieves up to 200 timestamped lines (128 KiB) on demand with a local text filter. Advanced commands are fixed scripts, never arbitrary user commands. Environment variables and full Docker inspect payloads are not exposed. Logs may still contain private information: limit dashboard access to trusted users.
 
+Use **Sort by** to choose a metric and the arrow to switch between highest/lowest first. Click CPU, Memory, Disk or Network I/O headers in tables to sort directly. This also works in each server's Containers tab. Missing metrics always stay last; memory/network sorting uses numeric bytes rather than text and distinguishes decimal (MB) from binary (MiB) units. Server memory and disk sort by percentage used; container memory sorts by bytes used. Container network I/O is accumulated received/sent data, while server network metrics are transfer rates.
+
 CPU and network are short samples, not historical graphs. High CPU/RAM, root disk pressure, unhealthy/restarting/dead containers and SSH/Docker availability generate explainable findings. Cleanly exited jobs and containers without a healthcheck are not automatically problems. The Healthy counter counts running containers with a passing healthcheck.
 
-Snapshots refresh every 30 seconds while the page is visible, share a 25-second server-side cache and limit concurrent collection to four hosts. Collection has timeouts and output limits. Diagnostics run only when requested. No continuously expanded process, storage or Docker events panel lives on Overview.
+Snapshots refresh every 30 seconds while the page is visible, share a 25-second server-side cache and limit concurrent collection to four hosts. Collection has timeouts and output limits. Diagnostics run only when requested. No continuously expanded process, storage or Docker events panel lives on Overview. Docker events transmit only type, action, time, ID and the JSON-escaped name; full container labels are excluded at source to prevent large Coolify/Traefik metadata from exceeding SSH output limits. Diagnostic failures display the safe connection/timeout/limit reason, and missing Docker access is shown as a notice.
 
 ### Log alert coverage
 

@@ -20,7 +20,8 @@ AllowUsers root
 LogLevel ERROR
 CONFIG
 sudo /usr/sbin/sshd -f "$fixture_dir/sshd_config" -E "$fixture_dir/sshd.log"
-docker run -d --name contscope-ssh-fixture alpine:3.21 sh -c 'echo "INFO ContScope test fixture"; sleep 600'
+fixture_label=$(python3 -c 'print("X" * 60000)')
+docker run -d --name contscope-ssh-fixture --label "contscope.fixture=$fixture_label" alpine:3.21 sh -c 'echo "INFO ContScope test fixture"; sleep 600'
 {
  echo "CONTSCOPE_TEST_SSH_PORT=22345"
  echo "CONTSCOPE_TEST_SSH_KEY=$fixture_dir/client"
