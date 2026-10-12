@@ -1,7 +1,7 @@
 FROM golang:1.23-alpine AS build
 WORKDIR /src
 COPY go.mod ./
-COPY main.go logs.go labels.go diagnostics.go findings.go guidance.go ./
+COPY main.go logs.go labels.go diagnostics.go findings.go guidance.go support.go ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /contscope .
 FROM alpine:3.21
 RUN apk add --no-cache openssh-client ca-certificates && addgroup -S contscope && adduser -S -u 1000 -G contscope contscope
