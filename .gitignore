@@ -1,0 +1,5 @@
+.env
+ssh/
+*.db
+.idea/
+.DS_Store
