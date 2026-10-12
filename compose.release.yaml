@@ -1,0 +1,18 @@
+services:
+  contscope:
+    image: ghcr.io/ttavares369/contscope:${CONTSCOPE_IMAGE_TAG:-v0.1.0-beta.1}
+    restart: unless-stopped
+    environment:
+      CONTSCOPE_USER: ${CONTSCOPE_USER:?Set in .env}
+      CONTSCOPE_PASSWORD: ${CONTSCOPE_PASSWORD:?Set in .env}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - contscope_data:/data
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+volumes:
+  contscope_data:
