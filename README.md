@@ -21,7 +21,7 @@ ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It
 - **Advanced diagnostics are on demand**: top CPU-consuming processes (ps), filesystem/Docker disk use (df, docker system df), interface traffic and established connection counts (procfs, ss), recent Docker events and individual container inspect details. All results are bounded and request-triggered, not collected continuously.
 - The front page stays focused on fast health, utilization and container status. Per-server diagnostics are behind buttons.
 
-**Limitations:** current version does not yet provide historical charts, external notifications, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data. Password authentication may be disabled by the monitored host's SSH policy.
+**Limitations:** current version does not yet provide historical charts, external notifications beyond opt-in Telegram log-error alerts, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data. Password authentication may be disabled by the monitored host's SSH policy.
 
 ## Local setup
 
@@ -32,7 +32,8 @@ git clone https://github.com/ttavares369/ContScope.git
 cd ContScope
 cp .env.example .env
 # Set CONTSCOPE_PASSWORD to a strong password (16+ characters).
-# Credentials are encrypted with an automatically generated local key.\ndocker compose up -d --build
+# Credentials are encrypted with an automatically generated local key.
+docker compose up -d --build
 ```
 
 The web UI is bound to **http://127.0.0.1:8080** by default. Log in with the admin credentials, then select **Add server**. Choose password or upload a private SSH key, discover the host's SSH key, compare the fingerprint with a trusted source such as the provider's console, select the verified fingerprint, test and save. No host-side monitoring agent is installed. The app generates and stores a private encryption key in the persistent Docker volume. Back up the entire volume together: losing the key makes stored secrets unrecoverable. Do not expose the local HTTP interface to untrusted networks; use HTTPS through a trusted reverse proxy if remote access is needed. The encryption key and app data volume must both be protected.
@@ -105,3 +106,9 @@ Open **Telegram alerts** in the dashboard. Create a bot with Telegram's @BotFath
 ## Organize servers with color tags
 
 Use **Organize servers with colors** to create reusable color-coded tags such as Company A, Company B, AWS, Azure, production or staging. Up to eight tags can be assigned to each registered server, and a tag may be reused across servers. The dashboard shows the tags next to server names, supports tag filters, and groups the full overview by each server's first (primary) tag. An **Untagged** group keeps new servers visible. Tags can be edited or deleted without changing the remote hosts or their SSH credentials. Tag names and colors are stored locally in the same persistent application volume.
+
+## Versioned Docker images (planned first beta)
+
+`compose.yaml` is the development Compose file and builds directly from source. `compose.release.yaml` pulls a ready-to-run image from `ghcr.io/ttavares369/contscope`. The release pipeline in `.github/workflows/publish.yml` publishes **linux/amd64** and **linux/arm64** on a `v*` tag **only when the tagged commit belongs to `main`**. The release tag is baked into the About panel together with its Git SHA and UTC build date. The release Compose pins a version rather than following `latest`, to avoid surprise upgrades. A tagged beta image is **not available until the corresponding tag is created, the workflow succeeds and the GHCR package is public**.
+
+After the image exists, download the repository's `compose.release.yaml` and `.env.example` files, copy `.env.example` to `.env`, set a strong admin password and run `docker compose -f compose.release.yaml up -d`. Use the `CONTSCOPE_IMAGE_TAG` variable to select a released version. The port binds to loopback by default. For access from other computers, configure an HTTPS reverse proxy; do not expose the basic-auth UI over cleartext HTTP. Always back up the persistent volume (both credentials and the locally generated encryption key are stored there). No remote host needs the ContScope agent installed.
