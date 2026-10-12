@@ -21,7 +21,7 @@ import (
 
 type Server struct { ID string `json:"id"`; Name string `json:"name"`; Host string `json:"host"`; Port int `json:"port"`; User string `json:"user"`; Key string `json:"key"` }
 type Container struct { ID string `json:"id"`; Names string `json:"name"`; Status string `json:"status"`; State string `json:"state"`; RestartCount int `json:"restarts"`; CPU string `json:"cpu"`; Memory string `json:"memory"`; NetIO string `json:"netIO"` }
-type Snapshot struct { Server Server `json:"server"`; Online bool `json:"online"`; Error string `json:"error,omitempty"`; Uptime string `json:"uptime"`; Load string `json:"load"`; MemoryUsed uint64 `json:"memoryUsed"`; MemoryTotal uint64 `json:"memoryTotal"`; DiskUsed uint64 `json:"diskUsed"`; DiskTotal uint64 `json:"diskTotal"`; Network string `json:"network"`; CPUPercent *float64 `json:"cpuPercent,omitempty"`; Containers []Container `json:"containers"`; At time.Time `json:"at"` }
+type Snapshot struct { Server Server `json:"server"`; Online bool `json:"online"`; Error string `json:"error,omitempty"`; Uptime string `json:"uptime"`; Load string `json:"load"`; MemoryUsed uint64 `json:"memoryUsed"`; MemoryTotal uint64 `json:"memoryTotal"`; DiskUsed uint64 `json:"diskUsed"`; DiskTotal uint64 `json:"diskTotal"`; Network string `json:"network"`; CPUPercent *float64 `json:"cpuPercent,omitempty"`; DockerStatus string `json:"dockerStatus"`; Findings []Finding `json:"findings"`; Containers []Container `json:"containers"`; At time.Time `json:"at"` }
 var safe = regexp.MustCompile(`^[a-zA-Z0-9_.-]+$`)
 var nameSafe = regexp.MustCompile(`^[a-zA-Z0-9 _.-]{1,64}$`)
 var mu sync.Mutex
@@ -46,7 +46,12 @@ printf 'UPTIME|'; uptime -p 2>/dev/null || true
 printf 'LOAD|'; cat /proc/loadavg | cut -d' ' -f1-3
 awk '/MemTotal:/ {total=$2*1024} /MemAvailable:/ {avail=$2*1024} END {printf "MEM|%.0f|%.0f\n", total-avail,total}' /proc/meminfo
 df -B1 -P / | awk 'NR==2{printf "DISK|%s|%s\n",$3,$2}'
-if command -v docker >/dev/null 2>&1; then
+if ! command -v docker >/dev/null 2>&1; then
+printf 'DOCKERSTATUS|missing\n'
+elif ! docker info --format '{{.ServerVersion}}' >/dev/null 2>&1; then
+printf 'DOCKERSTATUS|unavailable\n'
+else
+printf 'DOCKERSTATUS|ok\n'
 docker ps -a --no-trunc --format '{{json .}}' 2>/dev/null | while IFS= read -r line; do printf 'CONTAINER|%s\n' "$line"; done
 docker stats --no-stream --format '{{json .}}' 2>/dev/null | while IFS= read -r line; do printf 'STATS|%s\n' "$line"; done
 fi`
@@ -57,10 +62,11 @@ func collect(s Server) Snapshot {
  ctx,cancel:=context.WithTimeout(context.Background(),25*time.Second);defer cancel()
  cmd:=exec.CommandContext(ctx,"ssh",args...);cmd.Stdin=strings.NewReader(remote)
  var b strings.Builder;cmd.Stdout=&b;var errBuf strings.Builder;cmd.Stderr=&errBuf
- if e:=cmd.Run();e!=nil {if ctx.Err()!=nil{x.Error="SSH collection timed out"}else{x.Error="SSH collection failed: "+strings.TrimSpace(errBuf.String())};return x}
+ if e:=cmd.Run();e!=nil {if ctx.Err()!=nil{x.Error="SSH collection timed out"}else{x.Error="SSH collection failed: "+strings.TrimSpace(errBuf.String())};x.Findings=findingsForSnapshot(x);return x}
  x.Online=true
  byID:=map[string]int{}
  for _,line:=range strings.Split(b.String(),"\n"){t:=strings.SplitN(line,"|",3);if len(t)<2{continue};switch t[0]{
+ case "DOCKERSTATUS":x.DockerStatus=t[1]
  case "UPTIME":x.Uptime=t[1]
  case "LOAD":x.Load=t[1]
  case "MEM":if len(t)>2{x.MemoryUsed,_=strconv.ParseUint(t[1],10,64);x.MemoryTotal,_=strconv.ParseUint(t[2],10,64)}
@@ -70,7 +76,7 @@ func collect(s Server) Snapshot {
  case "CONTAINER":var c struct{ID string;Names string;Status string;State string};if json.Unmarshal([]byte(t[1]),&c)==nil{item:=Container{ID:c.ID,Names:c.Names,Status:c.Status,State:c.State};byID[c.ID]=len(x.Containers);x.Containers=append(x.Containers,item)}
  case "STATS":var c struct{ID string;Name string;CPUPerc string;MemUsage string;NetIO string};if json.Unmarshal([]byte(t[1]),&c)==nil{for i:=range x.Containers{if strings.HasPrefix(x.Containers[i].ID,c.ID)||x.Containers[i].Names==c.Name {x.Containers[i].CPU=c.CPUPerc;x.Containers[i].Memory=c.MemUsage;x.Containers[i].NetIO=c.NetIO;break}}}
  }}
- _=byID;return x
+ _ = byID; x.Findings=findingsForSnapshot(x);return x
 }
 func main(){
  go logMonitor.scanLoop()
