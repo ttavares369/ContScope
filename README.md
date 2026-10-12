@@ -7,7 +7,8 @@ ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It
 ## Initial prototype
 
 - Register multiple SSH hosts and switch between a combined overview and each host.
-- Display Linux load average, RAM usage, root disk usage, uptime, and network byte counters.
+- Assign a local display name and optional description to each container from the web UI. The original Docker container name stays unchanged; metadata is persisted locally and linked to the server + Docker container name.
+- Display Linux CPU utilization, load average, RAM usage, root disk usage, uptime, and network throughput rates.
 - List Docker containers, current status (including healthchecks when configured) and CPU, RAM and network snapshots reported by Docker.
 - Refresh manually or every 30 seconds.
 - Open the last 200 lines of a container's Docker logs from the Details button (limited to 128 KiB).
@@ -15,7 +16,7 @@ ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It
 - English responsive web UI, HTTP Basic authentication, and a persistent local JSON server list.
 - Read-only remote inspection: no restart, stop or delete controls.
 
-**Limitations:** current version does not yet show host CPU utilization percentage, historical charts, external notifications, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data.
+**Limitations:** current version does not yet provide historical charts, external notifications, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data.
 
 ## Local setup
 
