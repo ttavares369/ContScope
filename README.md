@@ -15,6 +15,8 @@ ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It
 - Periodic (90-second) bounded scanning for case-insensitive whole-word `error`, `fatal`, `panic`, and `exception` in recent running-container logs. Shows up to 200 distinct local alerts; log scan cursor persisted across app restarts.
 - English responsive web UI, HTTP Basic authentication, and a persistent local JSON server list.
 - Read-only remote inspection: no restart, stop or delete controls.
+- **Advanced diagnostics are on demand**: top CPU-consuming processes (ps), filesystem/Docker disk use (df, docker system df), interface traffic and established connection counts (procfs, ss), recent Docker events and individual container inspect details. All results are bounded and request-triggered, not collected continuously.
+- The front page stays focused on fast health, utilization and container status. Per-server diagnostics are behind buttons.
 
 **Limitations:** current version does not yet provide historical charts, external notifications, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data.
 
@@ -49,6 +51,10 @@ go run .
 ## License
 
 MIT.
+
+## Lightweight architecture
+
+One statically compiled Go backend serves the web UI and handles SSH sessions. It has no Prometheus, Grafana, external database, Node.js runtime, or permanent remote collector. Advanced diagnostics are requested explicitly and constrained with fixed read-only scripts, timeouts, and output limits. Network peer summaries may contain remote IP addresses; Docker logs may contain sensitive information, so limit UI access to trusted users. 
 
 ## Log alert limitations
 
