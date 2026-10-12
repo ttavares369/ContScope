@@ -67,3 +67,15 @@ One statically compiled Go backend serves the web UI and handles SSH sessions. I
 The scanner checks up to 200 **running** containers per host every 90 seconds, examines at most 300 log lines per container (up to 768 KiB of aggregate output), and attempts a 15-minute maximum lookback after downtime. The initial scan looks back a few seconds, not through historical logs. This is an in-dashboard *best-effort* warning, **not guaranteed lossless detection**: bursts, log drivers without `docker logs` support, inaccessible Docker sockets, large log volumes, or stopped hosts can cause missed matches. Matches are text heuristics, not proof of an actual service failure; false positives are expected. The local dashboard must be running to scan. Keep independent endpoint/uptime alerting.
 
 The `error`, `fatal`, `panic` and `exception` expressions are currently predefined. External notifications and custom rules are not yet implemented. Container log text may contain sensitive information; only grant trusted users access to the dashboard.
+
+## Local troubleshooting and optional support
+
+ContScope classifies common error messages locally with lightweight deterministic Go rules (storage pressure, memory, networking, DNS, TLS, permissions, file descriptors, process failures and timeouts). It displays a cautious explanation and suggested next check, with the original log hidden behind an expandable section. These suggestions are hypotheses and do not diagnose root causes on their own. No external AI API is required or contacted.
+
+The optional **Get expert help** link opens https://www.jupiterti.com/servicos in a separate browser tab. It is an external professional-services link, not part of monitoring. ContScope never automatically sends logs, metrics, identifiers, SSH details or technical reports to Jupiter TI. Opening an external website normally exposes standard connection metadata (such as the visitor's IP) to that site.
+
+We may add an explicitly opt-in BYOK AI integration in a future release; it must allow users to inspect and redact a request before any data leaves the local app. The software remains useful offline and never permits autonomous remote changes.
+
+## Licensing
+
+The prototype currently uses the MIT license. A switch to Apache 2.0 or another open-source license has **not** been decided or implemented. Commercial support is optional and does not change access to the open-source features.
