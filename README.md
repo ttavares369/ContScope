@@ -21,24 +21,24 @@ ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It
 - **Advanced diagnostics are on demand**: top CPU-consuming processes (ps), filesystem/Docker disk use (df, docker system df), interface traffic and established connection counts (procfs, ss), recent Docker events and individual container inspect details. All results are bounded and request-triggered, not collected continuously.
 - The front page stays focused on fast health, utilization and container status. Per-server diagnostics are behind buttons.
 
-**Limitations:** current version does not yet provide historical charts, external notifications, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data.
+**Limitations:** current version does not yet provide historical charts, external notifications, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data. Password authentication may be disabled by the monitored host's SSH policy.
 
 ## Local setup
 
-Requires Docker Engine + Compose, an SSH key authorized on each remote Linux host and a verified `known_hosts` file.
+Requires Docker Engine + Compose and SSH access to your Linux hosts. Create and verify each connection from the **Add server** form in the web dashboard. The application accepts SSH passwords or uploaded unencrypted PEM/OpenSSH private keys, confirms an independently verified SHA256 host-key fingerprint, tests SSH, and only then stores an AES-256-GCM encrypted credential locally. All managed SSH credentials remain encrypted within the private Docker volume.
 
 ```bash
 git clone https://github.com/ttavares369/ContScope.git
 cd ContScope
 cp .env.example .env
-# Edit .env to use a long random password (16+ characters)
-mkdir -p ssh
-# Provide a dedicated key ssh/id_ed25519 and verified ssh/known_hosts.
-# Keep secrets outside Git; neither the SSH directory nor .env should be committed.
+# Set CONTSCOPE_PASSWORD to a strong password (16+ characters).
+# Set CONTSCOPE_MASTER_KEY to a NEW, securely stored random key:
+openssl rand -hex 32
+# Paste that exact 64-character value into .env. Do not commit it.
 docker compose up -d --build
 ```
 
-The web UI is bound to **http://127.0.0.1:8080** by default. Authenticate with the configured environment username/password, then register the remote servers. Mount SSH keys and known_hosts from the `ssh/` directory. The private key must be accessible to the unprivileged container process (UID 1000); protect its permissions accordingly. SSH host-key checking is mandatory; do not blindly trust output from `ssh-keyscan`.
+The web UI is bound to **http://127.0.0.1:8080** by default. Log in with the admin credentials, then select **Add server**. Choose password or upload a private SSH key, discover the host's SSH key, compare the fingerprint with a trusted source such as the provider's console, select the verified fingerprint, test and save. No host-side monitoring agent is installed. Store your `CONTSCOPE_MASTER_KEY` separately and preserve it when upgrading: losing it means the saved SSH credentials cannot be decrypted. Do not expose the local HTTP interface to untrusted networks; use HTTPS through a trusted reverse proxy if remote access is needed. The encryption key and app data volume must both be protected.
 
 **Security:** Docker socket privileges are effectively root-equivalent on the remote host. This prototype requires a remote account allowed to use Docker; do not assume that this account is read-only solely because ContScope sends read-only commands. Do not expose this UI publicly without a trusted TLS/authentication gateway and further security review. The dashboard currently returns SSH error messages which may contain server configuration details, so use only in a trusted local environment.
 
@@ -96,3 +96,7 @@ The project welcomes voluntary support, but no payment provider or sponsorship U
 The ContScope header and favicon use a compact container-and-target SVG mark inspired by the selected brand concept; the full vector logo is included at `assets/contscope-logo.svg`. The **About** dialog shows the version, commit hash, build date, Apache 2.0 license, GitHub repository, optional donation status and professional support contact. Donation buttons will be activated only after a real funding destination is configured.
 
 Image releases can embed build data with `docker build --build-arg VERSION=v0.1.0-beta.1 --build-arg VCS_REF=$(git rev-parse --short HEAD) --build-arg BUILD_DATE=$(date -u +%FT%TZ) .`. Development builds show `dev` / `unknown` rather than claiming a published release.
+
+## SSH onboarding security boundaries
+
+Host discovery via `ssh-keyscan` only displays a **candidate** host key. The user must verify its SHA256 fingerprint out of band before trusting it. A successful connection test is required prior to saving and is cryptographically bound to the exact settings for five minutes. The application stores credentials encrypted with AES-256-GCM using the separately configured `CONTSCOPE_MASTER_KEY`. A 32-byte random key is required. Credentials are never returned to the browser by a GET endpoint; private keys/passwords are transported to the local API only during explicit setup/test/save requests. Protect the browser connection, the `.env` file, the Docker volume, and any copies of the uploaded private key. Do not upload passphrase-encrypted private keys yet; support for them is planned. The private key material is used transiently and the application does not install anything on monitored hosts.
