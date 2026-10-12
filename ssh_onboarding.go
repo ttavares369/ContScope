@@ -13,6 +13,7 @@ import (
  "encoding/hex"
  "encoding/json"
  "errors"
+ "fmt"
  "io"
  "net"
  "net/http"
@@ -274,6 +275,47 @@ func serveServerTest(w http.ResponseWriter,r *http.Request){
  token,err:=ticketForDraft(d,time.Now().Add(5*time.Minute).Unix())
  if err!=nil{jsonResponse(w,500,map[string]string{"error":"Cannot prepare connection test"});return}
  jsonResponse(w,200,map[string]any{"connected":true,"testToken":token,"message":"SSH authentication succeeded. You can now save this server."})
+}
+// quickServerConnect performs discovery, verifies the resulting key in SSH,
+// and stores it as the pinned key for subsequent connections.
+// Initial trust uses TOFU; later key changes fail closed.
+var quickScan=scanHostKeys
+var quickSSH=runSSHAuthenticated
+func quickServerConnect(d serverDraft)(Server,error){
+ choices,err:=quickScan(d.Host,d.Port);if err!=nil{return Server{},fmt.Errorf("cannot reach SSH or read its host key: %w",err)}
+ if len(choices)==0{return Server{},errors.New("SSH server did not present a supported host key")}
+ // Prefer Ed25519; use RSA or ECDSA when needed.
+ choice:=choices[0]
+ for _,c:=range choices{if c.Algorithm=="ssh-ed25519"{choice=c;break}}
+ candidate:=Server{Name:d.Name,Host:d.Host,Port:d.Port,User:d.User,AuthMethod:d.AuthMethod,HostKey:choice.HostKey}
+ output,err:=quickSSH(candidate,d.Secret,"printf 'CONTSCOPE_CONNECTED\\n'\n",15*time.Second,1024)
+ if err!=nil{return Server{},errors.New("SSH connection failed. Check host, port, username, password or SSH key")}
+ if !strings.Contains(output,"CONTSCOPE_CONNECTED"){return Server{},errors.New("SSH connection did not complete the verification command")}
+ return candidate,nil
+}
+func serveQuickServer(w http.ResponseWriter,r *http.Request){
+ if r.Method!=http.MethodPost{w.Header().Set("Allow","POST");w.WriteHeader(405);return}
+ d,err:=decodeDraft(r)
+ if err!=nil||!validDraft(d){jsonResponse(w,400,map[string]string{"error":"Check the server name, host, SSH user and authentication details"});return}
+ candidate,err:=quickServerConnect(d)
+ if err!=nil{jsonResponse(w,502,map[string]string{"error":err.Error()});return}
+ idBytes:=make([]byte,16);if _,err=rand.Read(idBytes);err!=nil{http.Error(w,"Cannot create server",500);return}
+ candidate.ID=hex.EncodeToString(idBytes)
+ sealed,err:=sealSecret(candidate.ID,d.Secret);if err!=nil{http.Error(w,"Cannot encrypt SSH credentials",500);return}
+ mu.Lock();defer mu.Unlock()
+ current,err:=load();if err!=nil{http.Error(w,"Cannot read existing servers",500);return}
+ for _,item:=range current{if item.Host==candidate.Host&&item.Port==candidate.Port&&item.User==candidate.User{jsonResponse(w,409,map[string]string{"error":"This SSH server is already registered"});return}}
+ secrets,err:=encryptedCredentials();if err!=nil{http.Error(w,"Cannot read credentials",500);return}
+ secrets[candidate.ID]=sealed
+ if err=saveEncryptedCredentials(secrets);err!=nil{http.Error(w,"Cannot save credentials",500);return}
+ current=append(current,candidate)
+ if err=save(current);err!=nil{delete(secrets,candidate.ID);_=saveEncryptedCredentials(secrets);http.Error(w,"Cannot save server",500);return}
+ jsonResponse(w,201,map[string]any{"server":candidate,"hostKeyFingerprint":fingerprintForHostKey(candidate.HostKey),"notice":"SSH host key saved (trust on first use). Future host key changes will be rejected."})
+}
+func fingerprintForHostKey(hostKey string)string{
+ parts:=strings.Fields(hostKey);if len(parts)!=3{return ""}
+ b,err:=base64.StdEncoding.DecodeString(parts[2]);if err!=nil{return ""}
+ sum:=sha256.Sum256(b);return "SHA256:"+base64.RawStdEncoding.EncodeToString(sum[:])
 }
 func serveServers(w http.ResponseWriter,r *http.Request){
  switch r.Method{
