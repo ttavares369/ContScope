@@ -5,7 +5,6 @@ services:
     environment:
       CONTSCOPE_USER: ${CONTSCOPE_USER:?Set in .env}
       CONTSCOPE_PASSWORD: ${CONTSCOPE_PASSWORD:?Set in .env}
-      CONTSCOPE_MASTER_KEY: ${CONTSCOPE_MASTER_KEY:?Generate a random 32-byte key with openssl rand -hex 32}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
