@@ -23,22 +23,27 @@ ContScope is a local-first, read-only web dashboard for sysadmins and DevOps. It
 
 **Limitations:** current version does not yet provide historical charts, external notifications beyond opt-in Telegram log-error alerts, advanced log rules or Kubernetes/Podman integration. There is no monitoring or history collection when the local container is stopped. The SSH user must have access to the Docker daemon for Docker data. Password authentication may be disabled by the monitored host's SSH policy.
 
-## Local setup
+## Quick start
 
-Requires Docker Engine + Compose and SSH access to your Linux hosts. Create and verify each connection from the **Add server** form in the web dashboard. The application accepts SSH passwords or uploaded unencrypted PEM/OpenSSH private keys, confirms an independently verified SHA256 host-key fingerprint, tests SSH, and only then stores an AES-256-GCM encrypted credential locally. All managed SSH credentials remain encrypted within the private Docker volume.
+Once a versioned image has been published to the GitHub Container Registry, download the matching `compose.release.yaml` as `compose.yaml` and run:
 
 ```bash
-git clone https://github.com/ttavares369/ContScope.git
-cd ContScope
-cp .env.example .env
-# Set CONTSCOPE_PASSWORD to a strong password (16+ characters).
-# Credentials are encrypted with an automatically generated local key.
-docker compose up -d --build
+docker compose up
 ```
 
-The web UI is bound to **http://127.0.0.1:8080** by default. Log in with the admin credentials, then select **Add server**. Choose password or upload a private SSH key, discover the host's SSH key, compare the fingerprint with a trusted source such as the provider's console, select the verified fingerprint, test and save. No host-side monitoring agent is installed. The app generates and stores a private encryption key in the persistent Docker volume. Back up the entire volume together: losing the key makes stored secrets unrecoverable. Do not expose the local HTTP interface to untrusted networks; use HTTPS through a trusted reverse proxy if remote access is needed. The encryption key and app data volume must both be protected.
+On its **first** run, ContScope creates an `admin` account, prints a random password and the local URL `http://localhost:8080` in the container logs. No manual password or master key is needed. The dashboard stays bound to loopback, so on a remote VPS use SSH tunneling or an HTTPS proxy. The first password is displayed only at account creation. **Important:** Docker log collectors and terminal scrollback may retain it, so protect logs and change/revoke the password when necessary.
 
-**Security:** Docker socket privileges are effectively root-equivalent on the remote host. This prototype requires a remote account allowed to use Docker; do not assume that this account is read-only solely because ContScope sends read-only commands. Do not expose this UI publicly without a trusted TLS/authentication gateway and further security review. The dashboard currently returns SSH error messages which may contain server configuration details, so use only in a trusted local environment.
+For detached installations, use `docker compose up -d` followed by `docker compose logs contscope` to see the initial password. Subsequent restarts do not print it again. If you lose access, run:
+
+```bash
+docker compose exec contscope /usr/local/bin/contscope reset-admin
+```
+
+The admin verification data, encrypted SSH credentials, tags and the automatically generated encryption key remain in the persistent Docker volume. Back up this volume securely. To build from source instead of pulling a registry image, use the development compose file available in the repository as `compose.dev.yaml`.
+
+After login, choose **Add server**, enter the SSH host, port and username, then select a password or upload a private key. Independently confirm the remote SSH host fingerprint, test the connection and save.
+
+**Security:** The SSH account's access to Docker may grant root-equivalent privileges on the remote host; monitoring requests are read-only but that does not make the SSH account itself read-only. The local HTTP UI is not suitable for exposure on a public network without HTTPS and appropriate access controls.
 
 ## Development
 
@@ -111,4 +116,4 @@ Use **Organize servers with colors** to create reusable color-coded tags such as
 
 `compose.yaml` is the development Compose file and builds directly from source. `compose.release.yaml` pulls a ready-to-run image from `ghcr.io/ttavares369/contscope`. The release pipeline in `.github/workflows/publish.yml` publishes **linux/amd64** and **linux/arm64** on a `v*` tag **only when the tagged commit belongs to `main`**. The release tag is baked into the About panel together with its Git SHA and UTC build date. The release Compose pins a version rather than following `latest`, to avoid surprise upgrades. A tagged beta image is **not available until the corresponding tag is created, the workflow succeeds and the GHCR package is public**.
 
-After the image exists, download the repository's `compose.release.yaml` and `.env.example` files, copy `.env.example` to `.env`, set a strong admin password and run `docker compose -f compose.release.yaml up -d`. Use the `CONTSCOPE_IMAGE_TAG` variable to select a released version. The port binds to loopback by default. For access from other computers, configure an HTTPS reverse proxy; do not expose the basic-auth UI over cleartext HTTP. Always back up the persistent volume (both credentials and the locally generated encryption key are stored there). No remote host needs the ContScope agent installed.
+After the image exists, download the versioned release Compose file as `compose.yaml` and run `docker compose up` to see the first-run admin credentials. Use the `CONTSCOPE_IMAGE_TAG` variable to select a released version. The port binds to loopback by default. For access from other computers, configure an HTTPS reverse proxy; do not expose the basic-auth UI over cleartext HTTP. Always back up the persistent volume (both credentials and the locally generated encryption key are stored there). No remote host needs the ContScope agent installed.
