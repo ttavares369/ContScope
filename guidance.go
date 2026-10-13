@@ -1,6 +1,31 @@
 package main
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+var goDNSFailureRe = regexp.MustCompile(`(?i)\bdial (?:tcp|udp)[46]?: lookup ([a-z0-9_.-]{1,253}) on `)
+var logLevelRe = regexp.MustCompile(`(?i)\[(INFO|DEBUG|TRACE|WARN|WARNING|ERROR|FATAL|PANIC)\]|"(?:level|severity)"\s*:\s*"(info|debug|trace|warn|warning|error|fatal|panic)"|(?:^|\s)(INFO|DEBUG|TRACE|WARN|WARNING|ERROR|FATAL|PANIC)(?:\s|:)`)
+var attemptRe = regexp.MustCompile(`(?i)\battempt:\s*([0-9]{1,4})\b`)
+
+func logSeverity(message string) string {
+	match := logLevelRe.FindStringSubmatch(message)
+	if len(match) == 0 {
+		return ""
+	}
+	for _, level := range match[1:] {
+		switch strings.ToLower(level) {
+		case "info", "debug", "trace":
+			return "info"
+		case "warn", "warning", "error":
+			return "warning"
+		case "fatal", "panic":
+			return "critical"
+		}
+	}
+	return ""
+}
 
 // LogGuidance provides heuristic, explainable troubleshooting hints without external APIs.
 // It must never claim an identified root cause or recommend destructive automated actions.
@@ -66,16 +91,42 @@ var guidanceRules = []guidanceRule{
 
 // GuideLog classifies a log line locally and intentionally returns cautious hypotheses.
 func GuideLog(message string) LogGuidance {
+	message = cleanLogLine(message)
 	lower := strings.ToLower(message)
+	level := logSeverity(message)
+	if match := goDNSFailureRe.FindStringSubmatch(message); len(match) > 1 {
+		guidance := LogGuidance{Category: "DNS lookup", Severity: "warning",
+			Explanation: "Hostname lookup for " + match[1] + " failed during a connection attempt. This does not prove the destination service is down.",
+			NextStep:    "Check subsequent retries and DNS resolution from the affected container. Verify the hostname and resolver before changing configuration."}
+		if strings.Contains(lower, "webhook failed") {
+			guidance.Explanation = "DNS resolution for " + match[1] + " failed while sending a webhook."
+			if attempt := attemptRe.FindStringSubmatch(message); len(attempt) > 1 {
+				guidance.Explanation += " The log reports attempt " + attempt[1] + "; the final delivery outcome is unknown."
+			} else {
+				guidance.Explanation += " The final delivery outcome is unknown."
+			}
+		}
+		if level != "" {
+			guidance.Severity = level
+		}
+		return guidance
+	}
 	for _, rule := range guidanceRules {
 		for _, pattern := range rule.patterns {
 			if strings.Contains(lower, pattern) {
-				return rule.guidance
+				guidance := rule.guidance
+				if level != "" {
+					guidance.Severity = level
+				}
+				return guidance
 			}
 		}
 	}
+	if level == "" {
+		level = "warning"
+	}
 	return LogGuidance{
-		Category: "Application error", Severity: "info",
+		Category: "Application log", Severity: level,
 		Explanation: "An error-like log message was detected, but the reason cannot be determined from this line alone.",
 		NextStep:    "Review surrounding log lines and timestamps; correlate with the container healthcheck, recent restarts and resource usage.",
 	}

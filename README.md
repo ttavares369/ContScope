@@ -60,7 +60,7 @@ Servers remain registered if monitoring fails. Offline means the SSH collection 
 
 | Area | Purpose |
 | --- | --- |
-| Overview | Server/container totals, priority findings, compact server cards and recent log alerts |
+| Overview | Server/container totals, sortable server table and priority activity |
 | Servers | Search by name/IP, tag/status filters, CPU/RAM/disk/network sorting, cards/list view and server details |
 | Server details | Summary, Containers, Logs, Diagnostics and Settings tabs |
 | Containers | All connected-host containers; name/server/status filters; CPU/memory/network sorting; details and logs |
@@ -70,7 +70,7 @@ Servers remain registered if monitoring fails. Offline means the SSH collection 
 | Settings | Change the administrative password and configure optional Telegram notifications |
 | About / Help | Version/build/commit/license, GitHub links, recovery instructions and optional support report |
 
-The sidebar collapses on desktop and opens as a drawer on mobile. Forms use accessible native dialogs, keyboard focus and inline errors. Tables become labeled cards on small screens. Preferences for sidebar and server view stay in the browser.
+The light, minimal workspace uses a top navigation bar on desktop and a drawer on mobile. Summary numbers, neutral tables and restrained status colors replace the previous colored panels. Forms use accessible native dialogs, keyboard focus and inline errors. Tables become labeled cards on small screens. The server card/list preference stays in the browser.
 
 ### Servers and credentials
 
@@ -100,15 +100,15 @@ Snapshots refresh every 30 seconds while the page is visible, share a 25-second 
 
 ### Log alert coverage
 
-Every 90 seconds the scanner checks up to 200 running containers per host, at most 300 recent log lines each, and 768 KiB of aggregate output. It matches whole words `error`, `fatal`, `panic` and `exception`, so these alerts are heuristics, not proof of root cause. Stable fingerprints deduplicate overlapping scans. The latest 200 alerts are held in memory; restart clears alert history while persisted cursors avoid repeatedly importing old errors.
+Every 90 seconds the scanner checks up to 200 running containers per host, at most 300 recent log lines each, and 768 KiB of aggregate output. It matches whole words `error`, `fatal`, `panic` and `exception`, so these alerts are heuristics, not proof of root cause. Explicit empty error fields such as `error:null` and `errors=0` do not produce alerts by themselves. Unknown messages and explicit WARN/ERROR/FATAL lines remain eligible. Informational matches retain their severity in the dashboard and do not trigger Telegram notifications. Classification uses the full line before bounding the displayed evidence to 2,048 characters plus an omission marker; ANSI formatting is removed and both the start and final cause are retained for longer lines. Docker timestamps supply the occurrence time. Stable fingerprints deduplicate overlapping scans. The latest 200 alerts are held in memory; restart clears alert history while persisted cursors avoid repeatedly importing old errors.
 
 Collection failures and coverage limits are shown in Alerts. Large log volumes, unavailable logging drivers, pauses and connection failures can cause missed lines. No monitoring continues when ContScope is stopped.
 
 ### Telegram (optional)
 
-Open **Settings → Notifications**. Create a bot through Telegram's @BotFather, start a conversation or add it to your group, and enter its bot token and numeric chat ID. **Send test message** tests the entered configuration without saving it. Enable and save to notify about new log errors. Leave the token blank to retain the saved token, or disable notifications without supplying a new token.
+Open **Settings → Notifications**. Create a bot through Telegram's @BotFather, start a conversation or add it to your group, and enter its bot token and numeric chat ID. **Send test message** tests the entered configuration without saving it. Enable and save to notify about new warning or critical log matches. Leave the token blank to retain the saved token, or disable notifications without supplying a new token.
 
-The token is encrypted at rest and never returned by a GET API. A 5–1440 minute per-server/container/category cooldown defaults to 30 minutes. Notifications include the server name, container ID abbreviation and category, never raw logs. Telegram is a third-party service; those selected details leave the instance only when enabled or an explicit test is requested. Health snapshot findings are displayed in the dashboard; automatic Telegram delivery is currently limited to log-error alerts.
+The token is encrypted at rest and never returned by a GET API. A 5–1440 minute per-server/container/category cooldown defaults to 30 minutes. Notifications include the server name, Docker container name or local alias, ID abbreviation, occurrence time, severity, category, derived explanation and suggested checks. Raw logs and full webhook URLs stay local. A DNS failure includes the destination hostname, and a webhook retry reports the attempt number without claiming the final delivery failed. Telegram is a third-party service; those selected details leave the instance only when enabled or an explicit test is requested. Health snapshot findings are displayed in the dashboard; automatic Telegram delivery is currently limited to warning and critical log matches.
 
 ### Account and recovery
 

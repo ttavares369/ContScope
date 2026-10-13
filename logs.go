@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 type LogAlert struct {
@@ -46,6 +47,39 @@ var logMonitor = &LogMonitor{
 
 var legacyKnownHosts = "/home/contscope/.ssh/known_hosts"
 var containerIDRe = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
+var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+
+func cleanLogLine(line string) string {
+	line = ansiEscapeRe.ReplaceAllString(strings.ToValidUTF8(line, ""), "")
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\t' {
+			return -1
+		}
+		return r
+	}, line)
+}
+
+// Keep both the context and the final cause when bounding unusually long lines.
+func logEvidence(line string) string {
+	runes := []rune(line)
+	if len(runes) <= 2048 {
+		return line
+	}
+	return string(runes[:1536]) + " … [middle omitted] … " + string(runes[len(runes)-512:])
+}
+
+var emptyErrorField = regexp.MustCompile(`(?i)"?(?:errors?|exception)"?\s*[:=]\s*(?:null|false|none|nil|0|""|\[\]|\{\})(?:\s|[,;}]|$)`)
+var errorWord = regexp.MustCompile(`(?i)(^|[^a-z0-9_])(error|fatal|panic|exception)([^a-z0-9_]|$)`)
+
+// Remove explicit empty error fields, not entire INFO lines. A log wrapper may
+// contain a real downstream error; unknown messages must remain visible.
+func relevantLogLine(line string) bool {
+	level := logSeverity(line)
+	if level == "warning" || level == "critical" {
+		return true
+	}
+	return errorWord.MatchString(emptyErrorField.ReplaceAllString(line, " ")) || GuideLog(line).Category != "Application log"
+}
 
 type cappedWriter struct {
 	buf       bytes.Buffer
@@ -222,11 +256,12 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info --format '{{.ServerVersi
   printf 'SCAN|UNAVAILABLE\n'
   exit 0
 fi
-ids="$(docker ps -q --no-trunc 2>/dev/null)" || exit 1
-total="$(printf '%s\n' "$ids" | grep -c . || true)"
+containers="$(docker ps --no-trunc --format '{{.ID}}|{{.Names}}' 2>/dev/null)" || exit 1
+total="$(printf '%s\n' "$containers" | grep -c . || true)"
 printf 'SCAN|OK|%s\n' "$total"
-printf '%s\n' "$ids" | head -n 200 | while IFS= read -r id; do
+printf '%s\n' "$containers" | head -n 200 | while IFS='|' read -r id name; do
   case "$id" in ''|*[!0-9a-f]*) continue;; esac
+  printf 'NAME|%s|%s\n' "$id" "$name"
   docker logs --timestamps --since '` + escapedDate + `' --tail 300 "$id" 2>&1 |
     grep -iE '(^|[^[:alnum:]_])(error|fatal|panic|exception)([^[:alnum:]_]|$)' |
     while IFS= read -r line; do
@@ -245,10 +280,18 @@ type scanResult struct {
 
 func parseLogScan(s Server, data string) scanResult {
 	result := scanResult{alerts: []LogAlert{}}
+	names := map[string]string{}
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	scanner.Buffer(make([]byte, 32*1024), 256*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if strings.HasPrefix(line, "NAME|") {
+			parts := strings.SplitN(line, "|", 3)
+			if len(parts) == 3 && containerIDRe.MatchString(parts[1]) && dockerNameRe.MatchString(parts[2]) {
+				names[parts[1]] = parts[2]
+			}
+			continue
+		}
 		if strings.HasPrefix(line, "SCAN|OK|") {
 			result.available = true
 			result.total, _ = strconv.Atoi(strings.TrimPrefix(line, "SCAN|OK|"))
@@ -265,17 +308,30 @@ func parseLogScan(s Server, data string) scanResult {
 		if len(parts) != 3 || !containerIDRe.MatchString(parts[1]) {
 			continue
 		}
-		msg := strings.ToValidUTF8(parts[2], "")
+		msg := cleanLogLine(parts[2])
+		if !relevantLogLine(msg) {
+			continue
+		}
 		// Timestamped Docker lines are unique fingerprints across overlapping polls.
 		hash := sha256.Sum256([]byte(s.ID + "|" + parts[1] + "|" + msg))
-		if len(msg) > 320 {
-			msg = msg[:320] + "…"
+		name := names[parts[1]]
+		if name == "" {
+			name = parts[1][:12]
+		}
+		at := time.Now().UTC()
+		if stamp, _, ok := strings.Cut(msg, " "); ok {
+			if parsed, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+				at = parsed
+			}
 		}
 		result.alerts = append(result.alerts, LogAlert{
 			ID: hex.EncodeToString(hash[:12]), ServerID: s.ID,
 			ServerName: s.Name, ContainerID: parts[1],
-			ContainerName: parts[1][:12], Message: msg, Guidance: GuideLog(msg), At: time.Now().UTC(),
+			ContainerName: name, Message: logEvidence(msg), Guidance: GuideLog(msg), At: at,
 		})
+	}
+	if scanner.Err() != nil {
+		result.available = false
 	}
 	return result
 }
