@@ -107,3 +107,45 @@ func TestTelegramTestDeliveryAndCooldown(t *testing.T) {
 		t.Fatal("disabled Telegram sent a message")
 	}
 }
+
+func TestTelegramLogNotificationsExplainContextWithoutRawLogs(t *testing.T) {
+	apiTestSetup(t)
+	oldClient, oldLast := telegramClient, telegramLast
+	telegramLast = map[string]time.Time{}
+	t.Cleanup(func() { telegramClient = oldClient; telegramLast = oldLast })
+	sealed, err := sealSecret("telegram-bot", "12345678:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = writeTelegram(telegramStored{Enabled: true, ChatID: "123456", TokenEncrypted: sealed, CooldownMinutes: 30}); err != nil {
+		t.Fatal(err)
+	}
+	if err = saveLabels([]ContainerLabel{{ServerID: "srv", ContainerName: "webhook-worker", Alias: "Messaging"}}); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	telegramClient = &http.Client{Transport: telegramTransport(func(r *http.Request) (*http.Response, error) {
+		calls++
+		b, _ := io.ReadAll(r.Body)
+		text := string(b)
+		for _, want := range []string{"Messaging (webhook-worker)", "DNS lookup", "automation.example.test", "attempt 1", "final delivery outcome is unknown", "2026-10-13T18:48:23Z"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("notification lacks %s: %s", want, text)
+			}
+		}
+		for _, secret := range []string{"/secret-webhook", "private-token", "password="} {
+			if strings.Contains(text, secret) {
+				t.Error("raw log details leaked")
+			}
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"ok":true}`)), Header: http.Header{}}, nil
+	})}
+	message := `[WARN] webhook failed, url: https://automation.example.test/secret-webhook?token=private-token, attempt: 1, password=secret, error: dial tcp: lookup automation.example.test on 127.0.0.11:53: server misbehaving`
+	alert := LogAlert{ServerID: "srv", ServerName: "Production", ContainerID: strings.Repeat("a", 64), ContainerName: "webhook-worker", Message: message, Guidance: GuideLog(message), At: time.Date(2026, 10, 13, 18, 48, 23, 0, time.UTC)}
+	info := alert
+	info.Guidance = GuideLog(`INFO request completed {"error":null}`)
+	logMonitor.notifyTelegramAlerts([]LogAlert{info, alert, alert})
+	if calls != 1 {
+		t.Fatalf("expected one warning and no info or duplicate delivery; got %d", calls)
+	}
+}

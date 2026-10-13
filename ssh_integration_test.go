@@ -79,6 +79,30 @@ func TestOpenSSHIntegration(t *testing.T) {
 		}
 	}
 
+	out, truncated, err := runSSHScript(s, logScanScript(time.Now().Add(-10*time.Minute)), 20*time.Second, 768*1024)
+	if err != nil || truncated {
+		t.Fatalf("real Docker log scan failed: %v", err)
+	}
+	scan := parseLogScan(s, out)
+	foundDNS, foundInfo, foundEmpty := false, false, false
+	for _, alert := range scan.alerts {
+		if alert.ContainerName != "contscope-ssh-fixture" {
+			continue
+		}
+		if alert.Guidance.Category == "DNS lookup" && alert.Guidance.Severity == "warning" {
+			foundDNS = true
+		}
+		if strings.Contains(alert.Message, "INFO completed error:null") {
+			foundEmpty = true
+		}
+		if alert.Guidance.Severity == "info" {
+			foundInfo = true
+		}
+	}
+	if !scan.available || !foundDNS || !foundInfo || foundEmpty {
+		t.Fatalf("real log identities/severities missing: %+v", scan)
+	}
+
 	wrong := s
 	parts := strings.Fields(s.HostKey)
 	parts[2] = "AAAAC3NzaC1lZDI1NTE5AAAAICQW8kjj/o15OWAUOwudDVXuPkCTFb08qOIwFy3WHYCN"

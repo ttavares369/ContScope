@@ -214,17 +214,49 @@ func telegramNotify(key, message string) {
 	telegramStatus.Unlock()
 }
 func (m *LogMonitor) notifyTelegramAlerts(alerts []LogAlert) {
+	mu.Lock()
+	labels, _ := loadLabels()
+	mu.Unlock()
 	for _, a := range alerts {
-		// Only genuinely new alerts are forwarded, and never raw logs.
-		message := "⚠️ ContScope detected a log error\nServer: " + safeMessage(a.ServerName) + "\nContainer: " + safeMessage(a.ContainerName) + "\nCategory: " + safeMessage(a.Guidance.Category) + "\nOpen ContScope to investigate."
-		telegramNotify("log:"+a.ServerID+":"+a.ContainerID+":"+a.Guidance.Category, message)
+		// Informational matches remain visible in ContScope, without warning notifications.
+		if a.Guidance.Severity == "info" {
+			continue
+		}
+		for _, label := range labels {
+			if label.ServerID == a.ServerID && label.ContainerName == a.ContainerName && label.Alias != "" {
+				a.ContainerName = label.Alias + " (" + a.ContainerName + ")"
+				break
+			}
+		}
+		telegramNotify("log:"+a.ServerID+":"+a.ContainerID+":"+a.Guidance.Category, telegramLogMessage(a))
 	}
+}
+
+func telegramLogMessage(a LogAlert) string {
+	// Derived guidance only: raw logs, webhook URLs and credentials stay local.
+	icon := "⚠️"
+	if a.Guidance.Severity == "critical" {
+		icon = "🔴"
+	}
+	id := a.ContainerID
+	if len(id) > 12 {
+		id = id[:12]
+	}
+	return icon + " ContScope · " + safeMessage(a.Guidance.Category) +
+		"\nSeverity: " + safeMessage(a.Guidance.Severity) +
+		"\nServer: " + safeMessage(a.ServerName) +
+		"\nContainer: " + safeMessage(a.ContainerName) + " [" + id + "]" +
+		"\nOccurred: " + a.At.UTC().Format(time.RFC3339) +
+		"\n\n" + a.Guidance.Explanation +
+		"\nCheck: " + a.Guidance.NextStep +
+		"\nOpen Alerts in ContScope for evidence and surrounding logs."
 }
 func safeMessage(s string) string {
 	s = strings.ReplaceAll(s, "\n", " ")
 	s = strings.ReplaceAll(s, "\r", " ")
-	if len(s) > 90 {
-		return s[:90]
+	runes := []rune(cleanLogLine(s))
+	if len(runes) > 120 {
+		return string(runes[:120]) + "…"
 	}
-	return s
+	return string(runes)
 }
