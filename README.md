@@ -60,7 +60,7 @@ Servers remain registered if monitoring fails. Offline means the SSH collection 
 
 | Area | Purpose |
 | --- | --- |
-| Overview | Server/container totals, sortable server table and priority activity |
+| Overview | Dark infrastructure map, host summaries, live totals, resource hotspots and priority activity |
 | Servers | Search by name/IP, tag/status filters, CPU/RAM/disk/network sorting, cards/list view and server details |
 | Server details | Summary, Containers, Logs, Diagnostics and Settings tabs |
 | Containers | All connected-host containers; name/server/status filters; CPU/memory/network sorting; details and logs |
@@ -70,7 +70,11 @@ Servers remain registered if monitoring fails. Offline means the SSH collection 
 | Settings | Change the administrative password and configure optional Telegram notifications |
 | About / Help | Version/build/commit/license, GitHub links, recovery instructions and optional support report |
 
-The light, minimal workspace uses a top navigation bar on desktop and a drawer on mobile. Summary numbers, neutral tables and restrained status colors replace the previous colored panels. Forms use accessible native dialogs, keyboard focus and inline errors. Tables become labeled cards on small screens. The server card/list preference stays in the browser.
+The dark infrastructure workspace uses a top navigation bar on desktop and a drawer on mobile. Server summaries sit on the left, a searchable ownership map occupies the center, and live totals and resource hotspots sit on the right. Click a host to open its workspace or a container to inspect it and open its logs. The connections show which host owns a container; they do not claim application, network or service dependencies.
+
+Search by host, IP, tag, Docker name or friendly name; select a host to focus its map. Desktop zoom controls adjust the view from 60% to 140%. Each host shows up to 24 containers, with problem containers first and a link to its complete inventory. Large maps scroll within the canvas. Automatic refresh preserves the search focus, scroll position and optional server inventory disclosure. The separate Servers search does not filter Overview.
+
+Container totals include only successfully collected Docker inventories. Running, not running and passing healthcheck counts remain distinct; missing SSH or Docker data is shown explicitly. Highest CPU, RAM and root disk cards identify the host with the highest current usage, rather than historical peaks. The network card sums available host transfer-rate samples. On phones, summary counters move above the map and host/container groups become vertical cards. Forms use native dialogs, keyboard focus and inline errors. Tables become labeled cards on small screens. The server card/list preference stays in the browser.
 
 ### Servers and credentials
 
@@ -140,7 +144,7 @@ go vet ./...
 go run .
 ```
 
-CI validates Go formatting, JavaScript syntax, authenticated APIs, tag CRUD, persistence, account recovery, encryption, server edit rollback and builds for AMD64/ARM64. A disposable loopback OpenSSH server and real Docker fixture exercise onboarding, pinned identity rejection, Linux/Docker telemetry, logs, diagnostics, editing and credential removal. Browser tests exercise real local CRUD APIs with controlled SSH telemetry fixtures, plus 65 route/viewport checks at 1920×1080, 1366×768, 768×1024, 390×844 and 320×640. Docker checks verify first-run login and persistent tags after container restart.
+CI validates Go formatting, JavaScript syntax, authenticated APIs, tag CRUD, persistence, account recovery, encryption, server edit rollback and builds for AMD64/ARM64. A disposable loopback OpenSSH server and real Docker fixture exercise onboarding, pinned identity rejection, Linux/Docker telemetry, logs, diagnostics, editing and credential removal. Browser tests exercise real local CRUD APIs with controlled SSH telemetry fixtures, map ownership, search/host filters, zoom, unavailable Docker state, large inventories and refresh state preservation, plus 65 route/viewport checks at 1920×1080, 1366×768, 768×1024, 390×844 and 320×640. Docker checks verify first-run login and persistent tags after container restart.
 
 Browser tests require Node.js only in development:
 
