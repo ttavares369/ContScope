@@ -23,6 +23,7 @@ import (
 
 type LogAlert struct {
 	ID            string      `json:"id"`
+	GroupKey      string      `json:"groupKey,omitempty"`
 	ServerID      string      `json:"serverId"`
 	ServerName    string      `json:"serverName"`
 	ContainerID   string      `json:"containerId"`
@@ -48,6 +49,18 @@ var logMonitor = &LogMonitor{
 var legacyKnownHosts = "/home/contscope/.ssh/known_hosts"
 var containerIDRe = regexp.MustCompile(`^[a-f0-9]{12,64}$`)
 var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
+var decryptionMessageRe = regexp.MustCompile(`(?i)\berror decrypting message ([a-f0-9]{8,128}) from ([a-z0-9_@.:-]{1,256}): failed to decrypt normal message: no session found for user ([a-z0-9_:.@-]{1,256})(?:\s|$)`)
+
+// Only repeated failures of the same message, sender and session may be grouped.
+// Keep the key opaque; identifiers and raw evidence stay out of Telegram guidance.
+func logGroupKey(serverID, containerID, message string) string {
+	match := decryptionMessageRe.FindStringSubmatch(message)
+	if len(match) != 4 {
+		return ""
+	}
+	hash := sha256.Sum256([]byte(serverID + "|" + containerID + "|" + strings.Join(match[1:], "|")))
+	return hex.EncodeToString(hash[:])
+}
 
 func cleanLogLine(line string) string {
 	line = ansiEscapeRe.ReplaceAllString(strings.ToValidUTF8(line, ""), "")
@@ -325,7 +338,7 @@ func parseLogScan(s Server, data string) scanResult {
 			}
 		}
 		result.alerts = append(result.alerts, LogAlert{
-			ID: hex.EncodeToString(hash[:12]), ServerID: s.ID,
+			ID: hex.EncodeToString(hash[:12]), GroupKey: logGroupKey(s.ID, parts[1], msg), ServerID: s.ID,
 			ServerName: s.Name, ContainerID: parts[1],
 			ContainerName: name, Message: logEvidence(msg), Guidance: GuideLog(msg), At: at,
 		})

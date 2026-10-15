@@ -1,28 +1,52 @@
 package main
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var goDNSFailureRe = regexp.MustCompile(`(?i)\bdial (?:tcp|udp)[46]?: lookup ([a-z0-9_.-]{1,253}) on `)
-var logLevelRe = regexp.MustCompile(`(?i)\[(INFO|DEBUG|TRACE|WARN|WARNING|ERROR|FATAL|PANIC)\]|"(?:level|severity)"\s*:\s*"(info|debug|trace|warn|warning|error|fatal|panic)"|(?:^|\s)(INFO|DEBUG|TRACE|WARN|WARNING|ERROR|FATAL|PANIC)(?:\s|:)`)
+var logLevelRe = regexp.MustCompile(`(?i)\[(?:[a-z0-9_.:/-]+[ \t]+){0,4}(INFO|DEBUG|TRACE|WARN|WARNING|ERROR|FATAL|PANIC)\]|\b(?:level|severity)=(info|debug|trace|warn|warning|error|fatal|panic)\b|(?:^|\s)(INFO|DEBUG|TRACE|WARN|WARNING|ERROR|FATAL|PANIC)(?:\s|:)`)
 var attemptRe = regexp.MustCompile(`(?i)\battempt:\s*([0-9]{1,4})\b`)
 
 func logSeverity(message string) string {
+	// Parse top-level JSON metadata, never a nested payload in a plain-text error.
+	payload := strings.TrimSpace(message)
+	if stamp, rest, ok := strings.Cut(payload, " "); ok {
+		if _, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+			payload = strings.TrimSpace(rest)
+		}
+	}
+	var record struct{ Level, Severity string }
+	if strings.HasPrefix(payload, "{") && json.Unmarshal([]byte(payload), &record) == nil {
+		for _, level := range []string{record.Level, record.Severity} {
+			if severity := severityForLevel(level); severity != "" {
+				return severity
+			}
+		}
+	}
 	match := logLevelRe.FindStringSubmatch(message)
 	if len(match) == 0 {
 		return ""
 	}
 	for _, level := range match[1:] {
-		switch strings.ToLower(level) {
-		case "info", "debug", "trace":
-			return "info"
-		case "warn", "warning", "error":
-			return "warning"
-		case "fatal", "panic":
-			return "critical"
+		if severity := severityForLevel(level); severity != "" {
+			return severity
 		}
+	}
+	return ""
+}
+
+func severityForLevel(level string) string {
+	switch strings.ToLower(level) {
+	case "info", "debug", "trace":
+		return "info"
+	case "warn", "warning", "error":
+		return "warning"
+	case "fatal", "panic":
+		return "critical"
 	}
 	return ""
 }
@@ -94,6 +118,15 @@ func GuideLog(message string) LogGuidance {
 	message = cleanLogLine(message)
 	lower := strings.ToLower(message)
 	level := logSeverity(message)
+	if missingDecryptionSession(message) {
+		severity := "warning"
+		if level != "" {
+			severity = level
+		}
+		return LogGuidance{Category: "Message decryption", Severity: severity,
+			Explanation: "The application could not decrypt a message because its decryption session was missing. This is a message-processing failure, not evidence that the container is down. The eventual message outcome is unknown.",
+			NextStep:    "Check subsequent logs for a successful retry or continued failures. If this persists, review the messaging client's session state and connection. Do not delete sessions or reconnect automatically."}
+	}
 	if match := goDNSFailureRe.FindStringSubmatch(message); len(match) > 1 {
 		guidance := LogGuidance{Category: "DNS lookup", Severity: "warning",
 			Explanation: "Hostname lookup for " + match[1] + " failed during a connection attempt. This does not prove the destination service is down.",
@@ -130,4 +163,10 @@ func GuideLog(message string) LogGuidance {
 		Explanation: "An error-like log message was detected, but the reason cannot be determined from this line alone.",
 		NextStep:    "Review surrounding log lines and timestamps; correlate with the container healthcheck, recent restarts and resource usage.",
 	}
+}
+
+func missingDecryptionSession(message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(lower, "no session found") &&
+		(strings.Contains(lower, "error decrypting message") || strings.Contains(lower, "failed to decrypt"))
 }

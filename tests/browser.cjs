@@ -82,6 +82,31 @@ async function test(){
 
  // Information must retain its actual severity; DNS context and evidence are inspectable.
  await go(page,'alerts');await page.getByLabel('Filter alert severity').selectOption('info');assert.equal(await page.locator('#results tbody tr').count(),1);assert.match(await page.locator('#results tbody tr').innerText(),/Application log.*info/s);await page.getByLabel('Filter alert severity').selectOption('warning');await page.locator('#results tbody tr').filter({hasText:'DNS lookup'}).getByRole('button',{name:'Details',exact:true}).click();assert.match(await page.locator('#modalBody').innerText(),/Main API/);assert.match(await page.locator('#modalBody').innerText(),/attempt 1; the final delivery outcome is unknown/);assert.match(await page.locator('#modalBody .code-output').innerText(),/server misbehaving/);assert.equal(await page.locator('#modalBody img').count(),0);await page.getByRole('button',{name:'Close dialog',exact:true}).click();await page.getByLabel('Filter alert severity').selectOption('all');await page.screenshot({path:path.join(output,'alerts-desktop.png'),fullPage:true});
+ // Same-message retries group in the panel, with all evidence retained.
+ const savedAlerts=await page.evaluate(()=>state.alerts);
+ const decryptionFixture={serverId:'demo-prod',serverName:'Production EU',containerId:'d'.repeat(64),containerName:'worker-without-healthcheck',groupKey:'message-one',guidance:{category:'Message decryption',severity:'warning',explanation:'A decryption session was missing; this is not evidence that the container is down.',nextStep:'Check subsequent retries; eventual message outcome is unknown.'}};
+ const decryptionAlerts=[
+  {...decryptionFixture,id:'retry-1',at:'2026-10-15T15:06:18.749Z',message:'2026-10-15T15:06:18.749Z [Client WARN] Error decrypting message ABCDEF0123456789: no session found <img src=x onerror=alert(1)>'},
+  {...decryptionFixture,id:'message-2',groupKey:'message-two',at:'2026-10-15T15:06:19.661Z',message:'2026-10-15T15:06:19.661Z [Client WARN] Error decrypting message ABCDEF0123456780: no session found'},
+  {...decryptionFixture,id:'retry-2',at:'2026-10-15T15:06:19.828Z',message:'2026-10-15T15:06:19.828Z [Client WARN] Error decrypting message ABCDEF0123456789: no session found'}
+ ];
+ await page.evaluate(alerts=>{state.alerts=alerts;render()},decryptionAlerts);
+ assert.equal(await page.locator('#results tbody tr').filter({hasText:'Message decryption'}).count(),2);
+ const retries=page.locator('#results tbody tr').filter({hasText:'2 matching log lines'});await retries.getByRole('button',{name:'Details',exact:true}).click();
+ assert.match(await page.locator('#modalBody').innerText(),/2 matching log lines in retained history/);assert.match(await page.locator('#modalBody').innerText(),/First:.*Last:/s);
+ const retryEvidence=await page.locator('#modalBody .code-output').innerText();assert(retryEvidence.includes('15:06:18.749Z')&&retryEvidence.includes('15:06:19.828Z'));assert.equal(await page.locator('#modalBody img').count(),0);
+ await page.getByRole('button',{name:'Close dialog',exact:true}).click();await noOverflow(page,'grouped decryption alerts');
+ // Window, host, container, severity and unrelated events must stay separate.
+ assert.equal(await page.evaluate(alerts=>{
+  state.alerts=[...alerts,
+   {...alerts[0],id:'later',at:'2026-10-15T15:22:18.749Z'},
+   {...alerts[0],id:'host',serverId:'demo-cloud'},
+   {...alerts[0],id:'container',containerId:'a'.repeat(64)},
+   {...alerts[0],id:'critical',guidance:{...alerts[0].guidance,severity:'critical'}},
+   {...alerts[0],id:'unknown-1',groupKey:''},{...alerts[0],id:'unknown-2',groupKey:''}];
+  return groupedLogAlerts().length;
+ },decryptionAlerts),8);
+ await page.evaluate(alerts=>{state.alerts=alerts;render()},savedAlerts);
  await go(page,'diagnostics');await page.getByLabel('Diagnostic server').selectOption('demo-prod');for(const kind of ['processes','storage','network','events']){await page.locator(`[data-action=diagnostic][data-id=${kind}]`).click();await page.locator('#diagOutput tbody tr').waitFor()}
  failEvents=true;await page.locator('[data-action=diagnostic][data-id=events]').click();await page.locator('#diagOutput .notice.danger').waitFor();assert.match(await page.locator('#diagOutput .notice.danger').innerText(),/SSH request timed out/);await page.locator('[data-action=diagnostic][data-id=events]').click();await page.locator('#diagOutput tbody tr').waitFor();
  await go(page,'settings');await page.locator('#telegramForm button[type=submit]').click();await page.locator('#toast').filter({hasText:'Notification settings saved'}).waitFor();await page.locator('#passwordForm input[name=currentPassword]').fill(password);await page.locator('#passwordForm input[name=newPassword]').fill('different-new-test-password');await page.locator('#passwordForm input[name=confirmPassword]').fill('different-new-test-password');await page.locator('#passwordForm button[type=submit]').click();await page.locator('#passwordForm .form-error').waitFor({state:'visible'});assert.match(await page.locator('#passwordForm .form-error').innerText(),/environment/i);

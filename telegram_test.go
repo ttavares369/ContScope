@@ -69,6 +69,20 @@ func TestTelegramValidation(t *testing.T) {
 	}
 }
 
+func TestTelegramDecryptionWarningKeepsMessageIdentityLocal(t *testing.T) {
+	line := "[Client WARN] Error decrypting message ABCDEF0123456789 from 123456789@lid: failed to decrypt normal message: no session found for user 123456789_1:0"
+	alert := LogAlert{ServerName: "Production", ContainerName: "messaging", ContainerID: strings.Repeat("a", 64), Message: line, Guidance: GuideLog(line), At: time.Now()}
+	text := telegramLogMessage(alert)
+	for _, want := range []string{"Message decryption", "Severity: warning", "session was missing", "not evidence that the container is down", "outcome is unknown"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("notification lacks %q: %s", want, text)
+		}
+	}
+	if strings.Contains(text, "123456789") || strings.Contains(text, "ABCDEF0123456789") || strings.Contains(text, "@lid") {
+		t.Fatal("message or sender identity leaked into Telegram")
+	}
+}
+
 type telegramTransport func(*http.Request) (*http.Response, error)
 
 func (f telegramTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

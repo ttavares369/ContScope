@@ -32,6 +32,42 @@ func TestParseLogScanIgnoresInvalidIDs(t *testing.T) {
 		t.Fatal("accepted invalid container ID")
 	}
 }
+
+func TestDecryptionRetriesShareOnlyTheirMessageGroup(t *testing.T) {
+	server := Server{ID: "srv"}
+	cid := strings.Repeat("a", 64)
+	line := "2026-10-15T15:06:18.749242980Z 12:06:18.749 [Client WARN] Error decrypting message ABCDEF0123456789 from 123456789@lid: failed to decrypt normal message: no session found for user 123456789_1:0"
+	retry := strings.ReplaceAll(line, "18.749", "19.828")
+	parse := func(s Server, container, message string) LogAlert {
+		t.Helper()
+		result := parseLogScan(s, "SCAN|OK|1\nALERT|"+container+"|"+message+"\n")
+		if len(result.alerts) != 1 {
+			t.Fatalf("missing alert: %+v", result)
+		}
+		return result.alerts[0]
+	}
+	first, second := parse(server, cid, line), parse(server, cid, retry)
+	if first.GroupKey == "" || first.GroupKey != second.GroupKey || first.ID == second.ID {
+		t.Fatal("retries must share a group while retaining independent evidence identities")
+	}
+	if strings.Contains(first.GroupKey, "123456789") || strings.Contains(first.GroupKey, "ABCDEF") {
+		t.Fatal("group key must be opaque")
+	}
+	for _, other := range []LogAlert{
+		parse(server, cid, strings.Replace(line, "ABCDEF0123456789", "ABCDEF0123456780", 1)),
+		parse(server, cid, strings.ReplaceAll(line, "123456789", "987654321")),
+		parse(server, cid, strings.Replace(line, "_1:0", "_2:0", 1)),
+		parse(Server{ID: "other"}, cid, line),
+		parse(server, strings.Repeat("b", 64), line),
+	} {
+		if other.GroupKey == "" || first.GroupKey == other.GroupKey {
+			t.Fatal("distinct messages, senders, sessions, containers or hosts must stay separate")
+		}
+	}
+	if parse(server, cid, "ERROR database query timed out").GroupKey != "" {
+		t.Fatal("unknown or unrelated events must not be grouped")
+	}
+}
 func TestLogScanScriptUsesTimestamp(t *testing.T) {
 	v := logScanScript(time.Date(2026, 10, 12, 13, 0, 0, 0, time.UTC))
 	if !strings.Contains(v, "--since '2026-10-12T13:00:00Z'") {
