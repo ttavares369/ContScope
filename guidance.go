@@ -54,10 +54,11 @@ func severityForLevel(level string) string {
 // LogGuidance provides heuristic, explainable troubleshooting hints without external APIs.
 // It must never claim an identified root cause or recommend destructive automated actions.
 type LogGuidance struct {
-	Category    string `json:"category"`
-	Severity    string `json:"severity"`
-	Explanation string `json:"explanation"`
-	NextStep    string `json:"nextStep"`
+	Category           string `json:"category"`
+	Severity           string `json:"severity"`
+	Explanation        string `json:"explanation"`
+	NextStep           string `json:"nextStep"`
+	PanelOnlyByDefault bool   `json:"panelOnlyByDefault,omitempty"`
 }
 
 type guidanceRule struct {
@@ -108,7 +109,7 @@ var guidanceRules = []guidanceRule{
 	}},
 	{[]string{"timeout", "timed out", "deadline exceeded"}, LogGuidance{
 		Category: "Timeout", Severity: "info",
-		Explanation: "An operation exceeded its time allowance; the root cause is not determined.",
+		Explanation: "An operation exceeded its time allowance; the root cause is not determined. This line alone does not establish a container or database outage.",
 		NextStep:    "Identify the slow operation and correlate with CPU, RAM, downstream latency, network and application logs.",
 	}},
 }
@@ -118,12 +119,21 @@ func GuideLog(message string) LogGuidance {
 	message = cleanLogLine(message)
 	lower := strings.ToLower(message)
 	level := logSeverity(message)
+	if level != "critical" && strings.Contains(lower, "collector::storage: storage: cannot stat mount source ") && strings.HasSuffix(strings.TrimSpace(lower), "error=no such file or directory (os error 2)") {
+		severity := "warning"
+		if level == "info" {
+			severity = "info"
+		}
+		return LogGuidance{Category: "Storage collection", Severity: severity, PanelOnlyByDefault: true,
+			Explanation: "The storage collector could not inspect a mount source because that path was unavailable from its environment. Storage metrics for that path may be incomplete. This does not establish that the volume is lost or its application is down.",
+			NextStep:    "Compare the collector's mount visibility with the host's volume paths and Docker data root. Verify the affected application's health before changing mounts or volumes."}
+	}
 	if missingDecryptionSession(message) {
 		severity := "warning"
 		if level != "" {
 			severity = level
 		}
-		return LogGuidance{Category: "Message decryption", Severity: severity,
+		return LogGuidance{Category: "Message decryption", Severity: severity, PanelOnlyByDefault: severity != "critical",
 			Explanation: "The application could not decrypt a message because its decryption session was missing. This is a message-processing failure, not evidence that the container is down. The eventual message outcome is unknown.",
 			NextStep:    "Check subsequent logs for a successful retry or continued failures. If this persists, review the messaging client's session state and connection. Do not delete sessions or reconnect automatically."}
 	}
@@ -151,6 +161,11 @@ func GuideLog(message string) LogGuidance {
 				if level != "" {
 					guidance.Severity = level
 				}
+				// A fatal request/session timeout is not proof of a process outage.
+				// Explicit process failure patterns above retain their severity.
+				if guidance.Category == "Timeout" && guidance.Severity == "critical" {
+					guidance.Severity = "warning"
+				}
 				return guidance
 			}
 		}
@@ -159,7 +174,7 @@ func GuideLog(message string) LogGuidance {
 		level = "warning"
 	}
 	return LogGuidance{
-		Category: "Application log", Severity: level,
+		Category: "Application log", Severity: level, PanelOnlyByDefault: level != "critical",
 		Explanation: "An error-like log message was detected, but the reason cannot be determined from this line alone.",
 		NextStep:    "Review surrounding log lines and timestamps; correlate with the container healthcheck, recent restarts and resource usage.",
 	}

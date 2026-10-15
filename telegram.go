@@ -17,23 +17,25 @@ import (
 )
 
 type TelegramSettings struct {
-	Enabled         bool   `json:"enabled"`
-	ChatID          string `json:"chatId"`
-	TokenConfigured bool   `json:"tokenConfigured"`
-	CooldownMinutes int    `json:"cooldownMinutes"`
+	Enabled                    bool   `json:"enabled"`
+	ChatID                     string `json:"chatId"`
+	TokenConfigured            bool   `json:"tokenConfigured"`
+	CooldownMinutes            int    `json:"cooldownMinutes"`
+	IncludeApplicationWarnings bool   `json:"includeApplicationWarnings"`
+	DeliveryStatus             string `json:"deliveryStatus,omitempty"`
 }
 type telegramStored struct {
-	Enabled         bool   `json:"enabled"`
-	ChatID          string `json:"chatId"`
-	TokenEncrypted  string `json:"tokenEncrypted"`
-	CooldownMinutes int    `json:"cooldownMinutes"`
+	Enabled                    bool   `json:"enabled"`
+	ChatID                     string `json:"chatId"`
+	TokenEncrypted             string `json:"tokenEncrypted"`
+	CooldownMinutes            int    `json:"cooldownMinutes"`
+	IncludeApplicationWarnings bool   `json:"includeApplicationWarnings"`
 }
 
 var telegramMu sync.Mutex
 var chatRE = regexp.MustCompile(`^-?[0-9]{1,24}$`)
 var botTokenRE = regexp.MustCompile(`^[0-9]{5,15}:[A-Za-z0-9_-]{20,100}$`)
 var telegramClient = &http.Client{Timeout: 9 * time.Second}
-var telegramLast = map[string]time.Time{}
 var telegramStatus struct {
 	sync.Mutex
 	Message string
@@ -69,7 +71,9 @@ func writeTelegram(c telegramStored) error {
 	return os.Rename(tmp, p)
 }
 func telegramPublic(c telegramStored) TelegramSettings {
-	return TelegramSettings{Enabled: c.Enabled, ChatID: c.ChatID, TokenConfigured: c.TokenEncrypted != "", CooldownMinutes: c.CooldownMinutes}
+	telegramStatus.Lock()
+	defer telegramStatus.Unlock()
+	return TelegramSettings{Enabled: c.Enabled, ChatID: c.ChatID, TokenConfigured: c.TokenEncrypted != "", CooldownMinutes: c.CooldownMinutes, IncludeApplicationWarnings: c.IncludeApplicationWarnings, DeliveryStatus: telegramStatus.Message}
 }
 func telegramSend(ctx context.Context, token, chatID, message string) error {
 	if !botTokenRE.MatchString(token) || !chatRE.MatchString(chatID) {
@@ -114,11 +118,12 @@ func serveTelegram(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
 		var req struct {
-			Enabled         bool   `json:"enabled"`
-			ChatID          string `json:"chatId"`
-			Token           string `json:"token"`
-			CooldownMinutes int    `json:"cooldownMinutes"`
-			Test            bool   `json:"test"`
+			Enabled                    bool   `json:"enabled"`
+			ChatID                     string `json:"chatId"`
+			Token                      string `json:"token"`
+			CooldownMinutes            int    `json:"cooldownMinutes"`
+			Test                       bool   `json:"test"`
+			IncludeApplicationWarnings bool   `json:"includeApplicationWarnings"`
 		}
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
@@ -171,7 +176,7 @@ func serveTelegram(w http.ResponseWriter, r *http.Request) {
 			jsonResponse(w, 500, map[string]string{"error": "Cannot encrypt token"})
 			return
 		}
-		saved := telegramStored{Enabled: req.Enabled, ChatID: req.ChatID, TokenEncrypted: encrypted, CooldownMinutes: req.CooldownMinutes}
+		saved := telegramStored{Enabled: req.Enabled, ChatID: req.ChatID, TokenEncrypted: encrypted, CooldownMinutes: req.CooldownMinutes, IncludeApplicationWarnings: req.IncludeApplicationWarnings}
 		if e = writeTelegram(saved); e != nil {
 			jsonResponse(w, 500, map[string]string{"error": "Cannot save Telegram settings"})
 			return
@@ -189,14 +194,19 @@ func telegramNotify(key, message string) {
 		telegramMu.Unlock()
 		return
 	}
-	since := time.Duration(c.CooldownMinutes) * time.Minute
-	if time.Since(telegramLast[key]) < since {
-		telegramMu.Unlock()
+	// Reserve on disk before sending, including across process restarts.
+	reserved, err := reserveTelegramCooldown(key, c.CooldownMinutes, time.Now().UTC())
+	telegramMu.Unlock()
+	if err != nil {
+		telegramStatus.Lock()
+		telegramStatus.Message = "Cannot persist Telegram cooldown; notification was not sent. Check the data volume."
+		telegramStatus.At = time.Now()
+		telegramStatus.Unlock()
 		return
 	}
-	// Reserve before sending to throttle repeated failures.
-	telegramLast[key] = time.Now()
-	telegramMu.Unlock()
+	if !reserved {
+		return
+	}
 	token, err := openSecret("telegram-bot", c.TokenEncrypted)
 	if err != nil {
 		return
@@ -214,12 +224,18 @@ func telegramNotify(key, message string) {
 	telegramStatus.Unlock()
 }
 func (m *LogMonitor) notifyTelegramAlerts(alerts []LogAlert) {
+	telegramMu.Lock()
+	config, err := readTelegram()
+	telegramMu.Unlock()
+	if err != nil {
+		return
+	}
 	mu.Lock()
 	labels, _ := loadLabels()
 	mu.Unlock()
 	for _, a := range alerts {
-		// Informational matches remain visible in ContScope, without warning notifications.
-		if a.Guidance.Severity == "info" {
+		// Application/collector warnings remain in the panel unless explicitly included.
+		if !notifyLogGuidance(a.Guidance, config.IncludeApplicationWarnings) {
 			continue
 		}
 		for _, label := range labels {
@@ -228,8 +244,12 @@ func (m *LogMonitor) notifyTelegramAlerts(alerts []LogAlert) {
 				break
 			}
 		}
-		telegramNotify("log:"+a.ServerID+":"+a.ContainerID+":"+a.Guidance.Category, telegramLogMessage(a))
+		telegramNotify("log:"+a.ServerID+":"+a.ContainerID+":"+a.Guidance.Category+":"+a.Guidance.Severity, telegramLogMessage(a))
 	}
+}
+
+func notifyLogGuidance(g LogGuidance, includeApplicationWarnings bool) bool {
+	return g.Severity == "critical" || (g.Severity == "warning" && (!g.PanelOnlyByDefault || includeApplicationWarnings))
 }
 
 func telegramLogMessage(a LogAlert) string {

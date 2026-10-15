@@ -62,7 +62,7 @@ func TestLogSeverityAndRetryGuidance(t *testing.T) {
 func TestMissingDecryptionSessionGuidance(t *testing.T) {
 	line := "2026-10-15T15:06:19.828811485Z 12:06:19.828 [Client WARN] Error decrypting message ABCDEF0123456789 from 123456789@lid: failed to decrypt normal message: no session found for user 123456789_1:0"
 	g := GuideLog(line)
-	if g.Category != "Message decryption" || g.Severity != "warning" {
+	if g.Category != "Message decryption" || g.Severity != "warning" || !g.PanelOnlyByDefault {
 		t.Fatalf("wrong classification: %+v", g)
 	}
 	if !strings.Contains(g.Explanation, "session was missing") || !strings.Contains(g.Explanation, "outcome is unknown") || !strings.Contains(g.Explanation, "not evidence that the container is down") {
@@ -76,5 +76,40 @@ func TestMissingDecryptionSessionGuidance(t *testing.T) {
 	}
 	if GuideLog(strings.Replace(line, "[Client WARN]", "[Client INFO]", 1)).Severity != "info" {
 		t.Fatal("explicit informational severity must be preserved")
+	}
+}
+
+func TestStorageCollectorWarningKeepsItsActualScope(t *testing.T) {
+	line := "2026-10-15T17:29:15.812489242Z 2026-10-15T17:29:15.810642Z  WARN collector::storage: storage: cannot stat mount source path=/var/lib/docker/volumes/private-app/_data error=No such file or directory (os error 2)"
+	g := GuideLog(line)
+	if g.Category != "Storage collection" || g.Severity != "warning" || !g.PanelOnlyByDefault {
+		t.Fatalf("incorrect collection scope: %+v", g)
+	}
+	if !strings.Contains(g.Explanation, "metrics") || !strings.Contains(g.Explanation, "does not establish") || strings.Contains(g.Explanation+g.NextStep, "private-app") {
+		t.Fatalf("missing uncertainty or private path in guidance: %+v", g)
+	}
+	for _, failure := range []string{
+		strings.Replace(line, "No such file or directory (os error 2)", "permission denied", 1),
+		strings.Replace(line, "No such file or directory (os error 2)", "no space left on device", 1),
+		strings.Replace(line, "WARN", "FATAL", 1),
+	} {
+		if GuideLog(failure).PanelOnlyByDefault {
+			t.Errorf("suppressed a different failure: %s", failure)
+		}
+	}
+}
+
+func TestTimeoutAloneDoesNotProveProcessFailure(t *testing.T) {
+	for _, line := range []string{"FATAL: connection timeout", "ERROR: query timed out", "PANIC deadline exceeded"} {
+		g := GuideLog(line)
+		if g.Category != "Timeout" || g.Severity != "warning" || g.PanelOnlyByDefault {
+			t.Errorf("timeout must remain visible and eligible as a warning: %+v", g)
+		}
+	}
+	for _, line := range []string{"FATAL error: startup timeout", "panic: request deadline exceeded"} {
+		g := GuideLog(line)
+		if g.Category != "Process failure" || g.Severity != "critical" || g.PanelOnlyByDefault {
+			t.Errorf("explicit runtime failure must retain severity: %+v", g)
+		}
 	}
 }
