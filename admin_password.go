@@ -19,7 +19,7 @@ var adminChangeMu sync.Mutex
 var (
 	errWrongAdminPassword      = errors.New("current password is incorrect")
 	errAdminEnvironmentManaged = errors.New("admin credentials are managed by environment variables")
-	errInvalidAdminPassword    = errors.New("new password must be 14 to 256 characters")
+	errInvalidAdminPassword    = errors.New("new password must be 8 to 256 characters")
 	errSameAdminPassword       = errors.New("new password must be different from the current password")
 )
 
@@ -41,7 +41,7 @@ func changeAdminPassword(current, next string) error {
 	if !verifyAdmin("admin", current) {
 		return errWrongAdminPassword
 	}
-	if !utf8.ValidString(next) || len(next) < 14 || len(next) > 256 || strings.ContainsAny(next, "\r\n\x00") {
+	if !utf8.ValidString(next) || utf8.RuneCountInString(next) < minAdminPasswordLength || utf8.RuneCountInString(next) > 256 || strings.ContainsAny(next, "\r\n\x00") {
 		return errInvalidAdminPassword
 	}
 	if current == next {

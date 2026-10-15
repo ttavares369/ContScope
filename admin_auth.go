@@ -11,7 +11,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"unicode/utf8"
 )
+
+const minAdminPasswordLength = 8
 
 type adminAccount struct {
 	Username     string `json:"username"`
@@ -84,8 +87,8 @@ func initAdminAccount() (string, bool, error) {
 	user := os.Getenv("CONTSCOPE_USER")
 	password := os.Getenv("CONTSCOPE_PASSWORD")
 	if user != "" || password != "" {
-		if user == "" || len(password) < 16 {
-			return "", false, errors.New("both CONTSCOPE_USER and a password of at least 16 characters are required when overriding login")
+		if user == "" || !utf8.ValidString(password) || utf8.RuneCountInString(password) < minAdminPasswordLength {
+			return "", false, fmt.Errorf("both CONTSCOPE_USER and a password of at least %d characters are required when overriding login", minAdminPasswordLength)
 		}
 		return "", false, nil
 	}

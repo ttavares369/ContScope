@@ -40,3 +40,17 @@ func TestFirstRunAdminAndReset(t *testing.T) {
 		t.Fatal("password reset did not rotate access")
 	}
 }
+
+func TestEnvironmentAdminPasswordMinimum(t *testing.T) {
+	t.Setenv("CONTSCOPE_USER", "admin")
+	t.Setenv("CONTSCOPE_PASSWORD", "Eight123")
+	if _, first, err := initAdminAccount(); err != nil || first || !verifyAdmin("admin", "Eight123") {
+		t.Fatalf("eight-character environment password rejected: %v", err)
+	}
+	for _, short := range []string{"1234567", "ááááááá"} {
+		t.Setenv("CONTSCOPE_PASSWORD", short)
+		if _, _, err := initAdminAccount(); err == nil {
+			t.Fatal("environment password below eight characters accepted")
+		}
+	}
+}

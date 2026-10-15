@@ -92,7 +92,7 @@ Create tags from **Tags & Groups**, choose from eight colors, and assign up to e
 
 ### Containers, logs and findings
 
-Friendly names and descriptions are local metadata linked to the server and original Docker container name. **Details** opens metadata editing and a bounded Docker inspect result. ContScope never renames the actual container.
+Friendly names and descriptions are local metadata linked to the server and original Docker container name. Map cards show the saved description first and the original Docker name directly below it. Without a description, the friendly name or Docker name is used. Search also matches saved descriptions. **Details** opens metadata editing and a bounded Docker inspect result. ContScope never renames the actual container.
 
 **Logs** retrieves up to 200 timestamped lines (128 KiB) on demand with a local text filter. Advanced commands are fixed scripts, never arbitrary user commands. Environment variables and full Docker inspect payloads are not exposed. Logs may still contain private information: limit dashboard access to trusted users.
 
@@ -116,7 +116,7 @@ The token is encrypted at rest and never returned by a GET API. A 5–1440 minut
 
 ### Account and recovery
 
-**Settings → Account** changes the local admin password (14–256 characters). The old password immediately stops authenticating new requests; browsers may cache Basic Auth credentials until the tab/browser is reopened. If credentials are overridden through `CONTSCOPE_USER`/`CONTSCOPE_PASSWORD`, change the deployment environment instead.
+**Settings → Account** changes the local admin password (8–256 characters). The old password immediately stops authenticating new requests; browsers may cache Basic Auth credentials until the tab/browser is reopened. If credentials are overridden through `CONTSCOPE_USER`/`CONTSCOPE_PASSWORD`, change the deployment environment instead.
 
 Reset the automatically managed account locally if needed:
 

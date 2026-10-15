@@ -21,15 +21,20 @@ func TestAdminChangePassword(t *testing.T) {
 	if err = changeAdminPassword("incorrect", "A-fresh-passphrase-for-admin!"); err != errWrongAdminPassword {
 		t.Fatalf("wrong current password accepted: %v", err)
 	}
-	if err = changeAdminPassword(current, "short"); err != errInvalidAdminPassword {
-		t.Fatalf("weak password accepted: %v", err)
+	for _, short := range []string{"1234567", "ááááááá"} {
+		if err = changeAdminPassword(current, short); err != errInvalidAdminPassword {
+			t.Fatalf("password below eight characters accepted: %v", err)
+		}
 	}
-	next := "A-fresh-passphrase-for-admin!"
+	next := "Eight123"
 	if err = changeAdminPassword(current, next); err != nil {
 		t.Fatal(err)
 	}
 	if verifyAdmin("admin", current) || !verifyAdmin("admin", next) {
 		t.Fatal("credential rotation failed")
+	}
+	if generated, first, err := initAdminAccount(); err != nil || first || generated != "" || !verifyAdmin("admin", next) || verifyAdmin("admin", current) {
+		t.Fatalf("changed eight-character password did not survive reinitialization: %v", err)
 	}
 	if err = changeAdminPassword(next, next); err != errSameAdminPassword {
 		t.Fatal("reusing the same password accepted")
@@ -45,7 +50,7 @@ func TestAdminChangePasswordAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"currentPassword":"` + current + `","newPassword":"new-password-12345678","confirmPassword":"new-password-12345678"}`
+	payload := `{"currentPassword":"` + current + `","newPassword":"Eight123","confirmPassword":"Eight123"}`
 	req := httptest.NewRequest("POST", "http://localhost/api/admin/password", strings.NewReader(payload))
 	req.Header.Set("Origin", "http://localhost")
 	req.SetBasicAuth("admin", current)
@@ -62,7 +67,7 @@ func TestAdminChangePasswordAPI(t *testing.T) {
 		t.Fatal("old password still accepted")
 	}
 	req = httptest.NewRequest("GET", "http://localhost/api/about", nil)
-	req.SetBasicAuth("admin", "new-password-12345678")
+	req.SetBasicAuth("admin", "Eight123")
 	response = httptest.NewRecorder()
 	auth(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(204) })(response, req)
 	if response.Code != 204 {

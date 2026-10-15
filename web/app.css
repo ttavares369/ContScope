@@ -23,3 +23,6 @@
 /* Narrow phones need the title and primary action on separate rows. */
 .page-head>div:first-child{min-width:0}.page-head h1{overflow-wrap:anywhere}
 @media(max-width:360px){.page-head{flex-direction:column;align-items:stretch;gap:12px}.page-head>.actions{align-self:flex-start}.page-head p{max-width:none}}
+
+/* Keep the saved description above the original Docker identity in map cards. */
+.container-node .container-description{white-space:pre-line}.container-node .container-docker-name{font:10px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--muted);overflow-wrap:anywhere}
